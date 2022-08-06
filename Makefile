@@ -2,10 +2,10 @@
 
 GO_FILES:=$(shell find . -type f -name '*.go' -print)
 
-build: sim
+build: main
 
-sim: $(GO_FILES)
-	go build -o sim cmd/main.go
+main: $(GO_FILES)
+	go build -o main cmd/main.go
 
 clean:
-	rm -f sim
+	rm -f main
