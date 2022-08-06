@@ -9,7 +9,7 @@ import (
 
 func main() {
 	mapData := []string{"...#...", ".#.#.#.", ".#.#.#.", "D......", ".##.##.", ".##.##.", ".##.##."}
-	sim := sim.New(config.NumAgents, mapData, 123)
+	sim := sim.New(config.NumAgents, mapData, config.RandSeed)
 	for {
 		sim.Dump()
 		if sim.Turn == config.LastTurn {

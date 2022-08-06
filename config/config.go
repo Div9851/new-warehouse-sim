@@ -14,4 +14,5 @@ const (
 	MaxChilds      = 5
 	RolloutLimit   = 10
 	BFSLimit       = 10
+	RandSeed       = 123
 )
