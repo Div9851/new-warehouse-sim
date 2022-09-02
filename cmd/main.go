@@ -1,25 +1,70 @@
 package main
 
 import (
-	"github.com/Div9851/new-warehouse-sim/agent"
+	"flag"
+	"fmt"
+	"sync"
+
 	"github.com/Div9851/new-warehouse-sim/config"
-	"github.com/Div9851/new-warehouse-sim/mcts"
+	"github.com/Div9851/new-warehouse-sim/mapdata"
 	"github.com/Div9851/new-warehouse-sim/sim"
 )
 
+func calc(s []float64) (float64, float64) {
+	n := len(s)
+	var (
+		average  float64
+		variance float64
+	)
+	for _, x := range s {
+		average += x
+		variance += x * x
+	}
+	average /= float64(n)
+	variance /= float64(n)
+	variance -= average * average
+	return average, variance
+}
+
 func main() {
-	mapData := []string{"...#...", ".#.#.#.", ".#.#.#.", "D......", ".##.##.", ".##.##.", ".##.##."}
-	sim := sim.New(config.NumAgents, mapData, config.RandSeed)
-	for {
-		sim.Dump()
-		if sim.Turn == config.LastTurn {
-			break
-		}
-		var actions agent.Actions
-		for i := 0; i < config.NumAgents; i++ {
-			node := mcts.New(sim.Turn, 0, sim.Agents, i, sim.MapData, sim.AllPos, sim.Reserved, sim.RandGens[i])
-			actions = append(actions, mcts.MCTS(node, sim.Items))
-		}
-		sim.Next(actions)
+	var (
+		numRun  = flag.Int("numrun", 1, "number of runs")
+		verbose = flag.Bool("verbose", false, "show all logs")
+	)
+	flag.Parse()
+	text := []string{
+		"...#...",
+		".#.#.#.",
+		".#.#.#.",
+		"D......",
+		".##.##.",
+		".##.##.",
+		".##.##.",
+	}
+	mapData := mapdata.New(text)
+	clearRate := make([][]float64, config.NumAgents)
+	for i := 0; i < config.NumAgents; i++ {
+		clearRate[i] = make([]float64, *numRun)
+	}
+	var wg sync.WaitGroup
+	for run := 0; run < *numRun; run++ {
+		wg.Add(1)
+		go func(run int) {
+			fmt.Printf("--- run %d start ---\n", run)
+			sim := sim.New(mapData, config.RandSeed+int64(run), *verbose)
+			itemsCount, _, clearCount := sim.Run()
+			for i := 0; i < config.NumAgents; i++ {
+				r := float64(clearCount[i]) / float64(itemsCount[i])
+				clearRate[i][run] = r
+			}
+			fmt.Printf("--- run %d end ---\n", run)
+			wg.Done()
+		}(run)
+	}
+	wg.Wait()
+	fmt.Println("--clear rate--")
+	for i := 0; i < config.NumAgents; i++ {
+		average, variance := calc(clearRate[i])
+		fmt.Printf("AGENT %d: avg. %f var. %f\n", i, average, variance)
 	}
 }
