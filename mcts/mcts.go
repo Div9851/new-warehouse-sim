@@ -34,22 +34,35 @@ func (a ActionScores) Less(i, j int) bool {
 }
 
 type Node struct {
-	CumReward  map[agentaction.Action]float64
-	SelectCnt  map[agentaction.Action]float64
-	TotalCnt   float64
-	RolloutCnt int
-	LastUpdate int
+	CumReward        map[agentaction.Action]float64
+	CumRewardSquared map[agentaction.Action]float64
+	SelectCnt        map[agentaction.Action]float64
+	TotalCnt         float64
+	RolloutCnt       int
+	LastUpdate       int
+}
+
+func (node *Node) UCB1(action agentaction.Action) float64 {
+	if _, exist := node.SelectCnt[action]; !exist {
+		return math.Inf(1)
+	}
+	score := node.CumReward[action]/node.SelectCnt[action] + math.Sqrt(2*math.Log(node.TotalCnt)/node.SelectCnt[action])
+	return score
+}
+
+func (node *Node) UCB1Tuned(action agentaction.Action) float64 {
+	if _, exist := node.SelectCnt[action]; !exist {
+		return math.Inf(1)
+	}
+	v := node.CumRewardSquared[action]/node.SelectCnt[action] + math.Sqrt(2*math.Log(node.TotalCnt)/node.SelectCnt[action])
+	score := node.CumReward[action]/node.SelectCnt[action] + math.Sqrt(math.Min(0.25, v)*math.Log(node.TotalCnt)/node.SelectCnt[action])
+	return score
 }
 
 func (node *Node) Select(actions agentaction.Actions) agentaction.Action {
 	actScores := ActionScores{}
 	for _, action := range actions {
-		var score float64
-		if _, exist := node.SelectCnt[action]; exist {
-			score = node.CumReward[action]/node.SelectCnt[action] + math.Sqrt(2*math.Log(node.TotalCnt)/node.SelectCnt[action])
-		} else {
-			score = math.Inf(1)
-		}
+		score := node.UCB1Tuned(action)
 		actScores = append(actScores, ActionScore{Action: action, Score: score})
 	}
 	sort.Sort(sort.Reverse(actScores))
@@ -59,8 +72,7 @@ func (node *Node) Select(actions agentaction.Actions) agentaction.Action {
 func (node *Node) BestAction() agentaction.Action {
 	actScores := ActionScores{}
 	for action := range node.CumReward {
-		score := node.CumReward[action] / node.SelectCnt[action]
-		actScores = append(actScores, ActionScore{Action: action, Score: score})
+		actScores = append(actScores, ActionScore{Action: action, Score: node.SelectCnt[action]})
 	}
 	sort.Sort(sort.Reverse(actScores))
 	return actScores[0].Action
@@ -113,11 +125,12 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 		}
 		if _, exist := planner.Nodes[i][depth][state]; !exist {
 			planner.Nodes[i][depth][state] = &Node{
-				CumReward:  make(map[agentaction.Action]float64),
-				SelectCnt:  make(map[agentaction.Action]float64),
-				TotalCnt:   0,
-				RolloutCnt: 0,
-				LastUpdate: 0,
+				CumReward:        make(map[agentaction.Action]float64),
+				CumRewardSquared: make(map[agentaction.Action]float64),
+				SelectCnt:        make(map[agentaction.Action]float64),
+				TotalCnt:         0,
+				RolloutCnt:       0,
+				LastUpdate:       0,
 			}
 		}
 		node := planner.Nodes[i][depth][state]
@@ -196,6 +209,7 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 			node.TotalCnt++
 			node.SelectCnt[actions[i]]++
 			node.CumReward[actions[i]] += cumRewards[i]
+			node.CumRewardSquared[actions[i]] += cumRewards[i] * cumRewards[i]
 			node.LastUpdate = planner.IterIdx
 		}
 	}
