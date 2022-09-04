@@ -54,8 +54,10 @@ func (node *Node) UCB1Tuned(action agentaction.Action) float64 {
 	if _, exist := node.SelectCnt[action]; !exist {
 		return math.Inf(1)
 	}
-	v := node.CumRewardSquared[action]/node.SelectCnt[action] + math.Sqrt(2*math.Log(node.TotalCnt)/node.SelectCnt[action])
-	score := node.CumReward[action]/node.SelectCnt[action] + math.Sqrt(math.Min(0.25, v)*math.Log(node.TotalCnt)/node.SelectCnt[action])
+	// 分散 = （二乗の平均）-（平均の二乗）
+	v := node.CumRewardSquared[action]/node.SelectCnt[action] - math.Pow(node.CumReward[action]/node.SelectCnt[action], 2)
+	c := math.Min(0.25, v+math.Sqrt(2*math.Log(node.TotalCnt)/node.SelectCnt[action]))
+	score := node.CumReward[action]/node.SelectCnt[action] + math.Sqrt(c*math.Log(node.TotalCnt)/node.SelectCnt[action])
 	return score
 }
 
