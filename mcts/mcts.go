@@ -1,7 +1,6 @@
 package mcts
 
 import (
-	"fmt"
 	"math"
 	"math/rand"
 	"sort"
@@ -178,11 +177,6 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 		} else {
 			// UCB アルゴリズムに従って行動選択
 			actions[i] = node.Select(validActions)
-			tmp := node.Select(validActions)
-			if actions[i] != tmp {
-				msg := fmt.Sprintf("must not be different: %v %v", actions[i], tmp)
-				panic(msg)
-			}
 		}
 	}
 	actionsCopy := make(agentaction.Actions, config.NumAgents)
