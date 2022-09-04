@@ -205,6 +205,7 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 			for action := range node.SelectCnt {
 				node.SelectCnt[action] *= decay
 				node.CumReward[action] *= decay
+				node.CumRewardSquared[action] *= decay
 			}
 			node.TotalCnt++
 			node.SelectCnt[actions[i]]++
