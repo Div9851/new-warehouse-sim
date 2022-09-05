@@ -3,7 +3,6 @@ package mcts
 import (
 	"math"
 	"math/rand"
-	"sort"
 
 	"github.com/Div9851/new-warehouse-sim/agentaction"
 	"github.com/Div9851/new-warehouse-sim/agentstate"
@@ -11,58 +10,35 @@ import (
 	"github.com/Div9851/new-warehouse-sim/mapdata"
 )
 
-type ActionScore struct {
-	Action agentaction.Action
-	Score  float64
-}
-
-type ActionScores []ActionScore
-
-func (a ActionScores) Len() int {
-	return len(a)
-}
-
-func (a ActionScores) Swap(i, j int) {
-	a[i], a[j] = a[j], a[i]
-}
-
-func (a ActionScores) Less(i, j int) bool {
-	if a[i].Score != a[j].Score {
-		return a[i].Score < a[j].Score
-	}
-	return a[i].Action < a[j].Action
-}
-
 type Node struct {
-	CumReward        map[agentaction.Action]float64
-	CumRewardSquared map[agentaction.Action]float64
-	SelectCnt        map[agentaction.Action]float64
-	TotalCnt         float64
-	RolloutCnt       int
-	LastUpdate       int
+	CumReward  []float64
+	SelectCnt  []float64
+	TotalCnt   float64
+	RolloutCnt int
+	LastUpdate int
 }
 
 func NewNode() *Node {
 	return &Node{
-		CumReward:        make(map[agentaction.Action]float64),
-		CumRewardSquared: make(map[agentaction.Action]float64),
-		SelectCnt:        make(map[agentaction.Action]float64),
-		TotalCnt:         0,
-		RolloutCnt:       0,
-		LastUpdate:       0,
+		CumReward:  make([]float64, agentaction.COUNT),
+		SelectCnt:  make([]float64, agentaction.COUNT),
+		TotalCnt:   0,
+		RolloutCnt: 0,
+		LastUpdate: 0,
 	}
 }
 
 func (node *Node) UCB1(action agentaction.Action) float64 {
-	if _, exist := node.SelectCnt[action]; !exist {
+	if node.SelectCnt[action] == 0 {
 		return math.Inf(1)
 	}
 	score := node.CumReward[action]/node.SelectCnt[action] + math.Sqrt(2*math.Log(node.TotalCnt)/node.SelectCnt[action])
 	return score
 }
 
+/*
 func (node *Node) UCB1Tuned(action agentaction.Action) float64 {
-	if _, exist := node.SelectCnt[action]; !exist {
+	if node.SelectCnt[action] == 0 {
 		return math.Inf(1)
 	}
 	// 分散 = （二乗の平均）-（平均の二乗）
@@ -71,28 +47,35 @@ func (node *Node) UCB1Tuned(action agentaction.Action) float64 {
 	score := node.CumReward[action]/node.SelectCnt[action] + math.Sqrt(c*math.Log(node.TotalCnt)/node.SelectCnt[action])
 	return score
 }
+*/
 
 func (node *Node) Select(actions agentaction.Actions) agentaction.Action {
-	actScores := ActionScores{}
+	selected := agentaction.COUNT
+	maxScore := math.Inf(-1)
 	for _, action := range actions {
-		score := node.UCB1Tuned(action)
-		actScores = append(actScores, ActionScore{Action: action, Score: score})
+		score := node.UCB1(action)
+		if maxScore < score {
+			maxScore = score
+			selected = action
+		}
 	}
-	sort.Sort(sort.Reverse(actScores))
-	return actScores[0].Action
+	return selected
 }
 
 func (node *Node) BestAction() agentaction.Action {
-	actScores := ActionScores{}
-	for action := range node.CumReward {
-		actScores = append(actScores, ActionScore{Action: action, Score: node.SelectCnt[action]})
+	selected := -1
+	maxScore := math.Inf(-1)
+	for action := range node.SelectCnt {
+		if maxScore < node.SelectCnt[action] {
+			maxScore = node.SelectCnt[action]
+			selected = action
+		}
 	}
-	sort.Sort(sort.Reverse(actScores))
-	return actScores[0].Action
+	return agentaction.Action(selected)
 }
 
 type Planner struct {
-	Nodes   [][]map[agentstate.State]*Node // [id][depth][pos]
+	Nodes   [][]map[agentstate.State]*Node // [id][depth][state]
 	Id      int
 	MapData *mapdata.MapData
 	RandGen *rand.Rand
@@ -221,12 +204,10 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 			for action := range node.SelectCnt {
 				node.SelectCnt[action] *= decay
 				node.CumReward[action] *= decay
-				node.CumRewardSquared[action] *= decay
 			}
 			node.TotalCnt++
 			node.SelectCnt[actions[i]]++
 			node.CumReward[actions[i]] += cumRewards[i]
-			node.CumRewardSquared[actions[i]] += cumRewards[i] * cumRewards[i]
 			node.LastUpdate = planner.IterIdx
 		}
 	}

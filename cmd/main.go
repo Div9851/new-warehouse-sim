@@ -8,6 +8,7 @@ import (
 	"github.com/Div9851/new-warehouse-sim/config"
 	"github.com/Div9851/new-warehouse-sim/mapdata"
 	"github.com/Div9851/new-warehouse-sim/sim"
+	"github.com/pkg/profile"
 )
 
 func calc(s []float64) (float64, float64) {
@@ -27,6 +28,7 @@ func calc(s []float64) (float64, float64) {
 }
 
 func main() {
+	defer profile.Start().Stop()
 	var (
 		numRun  = flag.Int("numrun", 1, "number of runs")
 		verbose = flag.Bool("verbose", false, "show all logs")

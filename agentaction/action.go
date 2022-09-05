@@ -10,7 +10,7 @@ const (
 	STAY
 	PICKUP
 	CLEAR
-	UNKNOWN
+	COUNT
 )
 
 func (action Action) ToStr() string {

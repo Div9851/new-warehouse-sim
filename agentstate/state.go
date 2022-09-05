@@ -81,6 +81,7 @@ func NextPosSA(curPos mapdata.Pos, action agentaction.Action, mapData *mapdata.M
 	return mapdata.Pos{R: nr, C: nc}
 }
 
+/*
 func NextPosMA(curPos []mapdata.Pos, actions agentaction.Actions, mapData *mapdata.MapData) ([]mapdata.Pos, []bool) {
 	n := len(curPos)
 	var nxtPos []mapdata.Pos
@@ -124,6 +125,61 @@ func NextPosMA(curPos []mapdata.Pos, actions agentaction.Actions, mapData *mapda
 		visited[i] = 2
 	}
 	for i := range nxtPos {
+		if visited[i] == 0 {
+			dfs(i)
+		}
+		if collision[i] {
+			nxtPos[i] = curPos[i]
+		}
+	}
+	return nxtPos, collision
+}
+*/
+
+func NextPosMA(curPos []mapdata.Pos, actions agentaction.Actions, mapData *mapdata.MapData) ([]mapdata.Pos, []bool) {
+	n := len(curPos)
+	nxtPos := []mapdata.Pos{}
+	for i, cur := range curPos {
+		nxt := NextPosSA(cur, actions[i], mapData)
+		nxtPos = append(nxtPos, nxt)
+	}
+	predId := make([]int, n)
+	collision := make([]bool, n)
+	visited := make([]int, n)
+	for i := 0; i < n; i++ {
+		predId[i] = -1
+		for j := 0; j < n; j++ {
+			if i == j {
+				continue
+			}
+			if nxtPos[i] == curPos[j] {
+				predId[i] = j
+			}
+			if nxtPos[i] == nxtPos[j] {
+				collision[i] = true
+				visited[i] = 2
+			}
+		}
+	}
+	var dfs func(int)
+	dfs = func(i int) {
+		visited[i] = 1
+		if predId[i] == -1 {
+			visited[i] = 2
+			return
+		}
+		j := predId[i]
+		if visited[j] == 0 {
+			dfs(j)
+		} else if visited[j] == 1 {
+			collision[i] = true
+			visited[i] = 2
+			return
+		}
+		collision[i] = collision[j]
+		visited[i] = 2
+	}
+	for i := 0; i < n; i++ {
 		if visited[i] == 0 {
 			dfs(i)
 		}
