@@ -87,7 +87,7 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 		for id := 0; id < config.NumAgents; id++ {
 			wg.Add(1)
 			go func(id int) {
-				planner := mcts.New(sim.MapData, sim.RandGens[id])
+				planner := mcts.New(id, sim.MapData, sim.RandGens[id])
 				items := make([]map[mapdata.Pos]int, config.NumAgents)
 				for i := 0; i < config.NumAgents; i++ {
 					if i == id {
@@ -97,9 +97,9 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 					}
 				}
 				for i := 0; i < config.NumIters; i++ {
-					planner.Update(sim.Turn, sim.States, id, items)
+					planner.Update(sim.Turn, sim.States, items)
 				}
-				actions[id] = planner.BestAction(sim.States, id)
+				actions[id] = planner.BestAction(sim.States)
 				wg.Done()
 			}(id)
 		}

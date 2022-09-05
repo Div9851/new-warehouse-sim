@@ -42,6 +42,17 @@ type Node struct {
 	LastUpdate       int
 }
 
+func NewNode() *Node {
+	return &Node{
+		CumReward:        make(map[agentaction.Action]float64),
+		CumRewardSquared: make(map[agentaction.Action]float64),
+		SelectCnt:        make(map[agentaction.Action]float64),
+		TotalCnt:         0,
+		RolloutCnt:       0,
+		LastUpdate:       0,
+	}
+}
+
 func (node *Node) UCB1(action agentaction.Action) float64 {
 	if _, exist := node.SelectCnt[action]; !exist {
 		return math.Inf(1)
@@ -82,23 +93,30 @@ func (node *Node) BestAction() agentaction.Action {
 
 type Planner struct {
 	Nodes   [][]map[agentstate.State]*Node // [id][depth][pos]
+	Id      int
 	MapData *mapdata.MapData
 	RandGen *rand.Rand
 	IterIdx int
 }
 
-func New(mapData *mapdata.MapData, randGen *rand.Rand) *Planner {
+func New(id int, mapData *mapdata.MapData, randGen *rand.Rand) *Planner {
 	nodes := make([][]map[agentstate.State]*Node, config.NumAgents)
-	return &Planner{Nodes: nodes, MapData: mapData, RandGen: randGen}
+	return &Planner{
+		Nodes:   nodes,
+		Id:      id,
+		MapData: mapData,
+		RandGen: randGen,
+		IterIdx: 0,
+	}
 }
 
-func (planner *Planner) BestAction(curStates agentstate.States, id int) agentaction.Action {
-	state := curStates[id]
-	node := planner.Nodes[id][0][state]
+func (planner *Planner) BestAction(curStates agentstate.States) agentaction.Action {
+	state := curStates[planner.Id]
+	node := planner.Nodes[planner.Id][0][state]
 	return node.BestAction()
 }
 
-func (planner *Planner) Update(turn int, curStates agentstate.States, myId int, items []map[mapdata.Pos]int) {
+func (planner *Planner) Update(turn int, curStates agentstate.States, items []map[mapdata.Pos]int) {
 	rollout := make([]bool, config.NumAgents)
 	targetPos := []mapdata.Pos{}
 	itemsCopy := []map[mapdata.Pos]int{}
@@ -110,11 +128,11 @@ func (planner *Planner) Update(turn int, curStates agentstate.States, myId int, 
 		}
 		itemsCopy = append(itemsCopy, m)
 	}
-	planner.update(turn, 0, curStates, myId, itemsCopy, rollout, targetPos)
+	planner.update(turn, 0, curStates, itemsCopy, rollout, targetPos)
 	planner.IterIdx++
 }
 
-func (planner *Planner) update(turn int, depth int, curStates agentstate.States, myId int, items []map[mapdata.Pos]int, rollout []bool, targetPos []mapdata.Pos) []float64 {
+func (planner *Planner) update(turn int, depth int, curStates agentstate.States, items []map[mapdata.Pos]int, rollout []bool, targetPos []mapdata.Pos) []float64 {
 	if turn == config.LastTurn || depth == config.MaxDepth {
 		return make([]float64, config.NumAgents)
 	}
@@ -122,23 +140,18 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 	nxtRollout := make([]bool, config.NumAgents)
 	copy(nxtRollout, rollout)
 	for i, state := range curStates {
-		if len(planner.Nodes[i]) <= depth {
-			planner.Nodes[i] = append(planner.Nodes[i], make(map[agentstate.State]*Node))
-		}
-		if _, exist := planner.Nodes[i][depth][state]; !exist {
-			planner.Nodes[i][depth][state] = &Node{
-				CumReward:        make(map[agentaction.Action]float64),
-				CumRewardSquared: make(map[agentaction.Action]float64),
-				SelectCnt:        make(map[agentaction.Action]float64),
-				TotalCnt:         0,
-				RolloutCnt:       0,
-				LastUpdate:       0,
+		if !rollout[i] {
+			if len(planner.Nodes[i]) <= depth {
+				planner.Nodes[i] = append(planner.Nodes[i], make(map[agentstate.State]*Node))
 			}
-		}
-		node := planner.Nodes[i][depth][state]
-		if !rollout[i] && node.RolloutCnt < config.ExpandThresh {
-			node.RolloutCnt++
-			nxtRollout[i] = true
+			if _, exist := planner.Nodes[i][depth][state]; !exist {
+				planner.Nodes[i][depth][state] = NewNode()
+			}
+			node := planner.Nodes[i][depth][state]
+			if node.RolloutCnt < config.ExpandThresh {
+				node.RolloutCnt++
+				nxtRollout[i] = true
+			}
 		}
 		validActions := make(agentaction.Actions, len(planner.MapData.ValidActions[state.Pos]))
 		copy(validActions, planner.MapData.ValidActions[state.Pos])
@@ -191,13 +204,14 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 			}
 		} else {
 			// UCB アルゴリズムに従って行動選択
+			node := planner.Nodes[i][depth][state]
 			actions[i] = node.Select(validActions)
 		}
 	}
 	actionsCopy := make(agentaction.Actions, config.NumAgents)
 	copy(actionsCopy, actions)
 	nxtStates, rewards, _ := agentstate.Next(curStates, actions, items, planner.MapData, planner.RandGen)
-	cumRewards := planner.update(turn+1, depth+1, nxtStates, myId, items, nxtRollout, targetPos)
+	cumRewards := planner.update(turn+1, depth+1, nxtStates, items, nxtRollout, targetPos)
 	for i, state := range curStates {
 		cumRewards[i] = rewards[i] + config.DiscountFactor*cumRewards[i]
 		if !rollout[i] {
