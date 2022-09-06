@@ -83,11 +83,16 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 		}
 		// 行動決定フェーズ
 		var wg sync.WaitGroup
+		var pool = &sync.Pool{
+			New: func() interface{} {
+				return mcts.NewNode()
+			},
+		}
 		actions := make(agentaction.Actions, config.NumAgents)
 		for id := 0; id < config.NumAgents; id++ {
 			wg.Add(1)
 			go func(id int) {
-				planner := mcts.New(id, sim.MapData, sim.RandGens[id])
+				planner := mcts.New(id, sim.MapData, sim.RandGens[id], pool)
 				items := make([]map[mapdata.Pos]int, config.NumAgents)
 				for i := 0; i < config.NumAgents; i++ {
 					if i == id {

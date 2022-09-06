@@ -15,17 +15,19 @@ type MapData struct {
 	H, W         int
 	AllPos       []Pos
 	DepotPos     Pos
-	ValidActions map[Pos]agentaction.Actions
-	MinDist      map[Pos]map[Pos]int
+	ValidActions [][]agentaction.Actions
+	MinDist      [][][][]int
 }
 
 func New(text []string) *MapData {
 	h, w := len(text), len(text[0])
 	var allPos []Pos
 	var depotPos Pos
-	validActions := make(map[Pos]agentaction.Actions)
-	minDist := make(map[Pos]map[Pos]int)
+	validActions := [][]agentaction.Actions{}
+	minDist := [][][][]int{}
 	for r := 0; r < h; r++ {
+		validActions = append(validActions, make([]agentaction.Actions, w))
+		minDist = append(minDist, make([][][]int, w))
 		for c := 0; c < w; c++ {
 			if text[r][c] == '#' {
 				continue
@@ -36,7 +38,7 @@ func New(text []string) *MapData {
 			} else {
 				allPos = append(allPos, Pos{r, c})
 			}
-			actions := agentaction.Actions{}
+			actions := agentaction.Actions{agentaction.STAY}
 			if r > 0 && text[r-1][c] != '#' {
 				actions = append(actions, agentaction.UP)
 			}
@@ -49,8 +51,8 @@ func New(text []string) *MapData {
 			if c+1 < w && text[r][c+1] != '#' {
 				actions = append(actions, agentaction.RIGHT)
 			}
-			validActions[Pos{R: r, C: c}] = actions
-			minDist[Pos{R: r, C: c}] = bfs(text, h, w, Pos{R: r, C: c})
+			validActions[r][c] = actions
+			minDist[r][c] = bfs(text, h, w, Pos{R: r, C: c})
 		}
 	}
 
@@ -65,11 +67,17 @@ func New(text []string) *MapData {
 	}
 }
 
-func bfs(text []string, h int, w int, startPos Pos) map[Pos]int {
+func bfs(text []string, h int, w int, startPos Pos) [][]int {
 	dr := []int{-1, 0, 1, 0}
 	dc := []int{0, 1, 0, -1}
-	minDist := make(map[Pos]int)
-	minDist[startPos] = 0
+	minDist := [][]int{}
+	for i := 0; i < h; i++ {
+		minDist = append(minDist, make([]int, w))
+		for j := 0; j < w; j++ {
+			minDist[i][j] = -1
+		}
+	}
+	minDist[startPos.R][startPos.C] = 0
 	que := []Pos{startPos}
 	for len(que) > 0 {
 		cur := que[0]
@@ -81,8 +89,8 @@ func bfs(text []string, h int, w int, startPos Pos) map[Pos]int {
 			if 0 > nr || nr >= h || 0 > nc || nc >= w || text[nr][nc] == '#' {
 				continue
 			}
-			if _, ok := minDist[nxt]; !ok {
-				minDist[nxt] = minDist[cur] + 1
+			if minDist[nr][nc] == -1 {
+				minDist[nr][nc] = minDist[r][c] + 1
 				que = append(que, nxt)
 			}
 		}

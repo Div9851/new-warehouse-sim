@@ -3,6 +3,7 @@ package mcts
 import (
 	"math"
 	"math/rand"
+	"sync"
 
 	"github.com/Div9851/new-warehouse-sim/agentaction"
 	"github.com/Div9851/new-warehouse-sim/agentstate"
@@ -74,21 +75,33 @@ func (node *Node) BestAction() agentaction.Action {
 	return agentaction.Action(selected)
 }
 
+func (node *Node) Reset() {
+	for i := range node.CumReward {
+		node.CumReward[i] = 0
+		node.SelectCnt[i] = 0
+	}
+	node.TotalCnt = 0
+	node.RolloutCnt = 0
+	node.LastUpdate = 0
+}
+
 type Planner struct {
 	Nodes   [][]map[agentstate.State]*Node // [id][depth][state]
 	Id      int
 	MapData *mapdata.MapData
 	RandGen *rand.Rand
+	Pool    *sync.Pool
 	IterIdx int
 }
 
-func New(id int, mapData *mapdata.MapData, randGen *rand.Rand) *Planner {
+func New(id int, mapData *mapdata.MapData, randGen *rand.Rand, pool *sync.Pool) *Planner {
 	nodes := make([][]map[agentstate.State]*Node, config.NumAgents)
 	return &Planner{
 		Nodes:   nodes,
 		Id:      id,
 		MapData: mapData,
 		RandGen: randGen,
+		Pool:    pool,
 		IterIdx: 0,
 	}
 }
@@ -122,28 +135,30 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 	actions := make(agentaction.Actions, config.NumAgents)
 	nxtRollout := make([]bool, config.NumAgents)
 	copy(nxtRollout, rollout)
+	nodes := make([]*Node, config.NumAgents)
 	for i, state := range curStates {
 		if !rollout[i] {
 			if len(planner.Nodes[i]) <= depth {
 				planner.Nodes[i] = append(planner.Nodes[i], make(map[agentstate.State]*Node))
 			}
-			if _, exist := planner.Nodes[i][depth][state]; !exist {
-				planner.Nodes[i][depth][state] = NewNode()
+			if node, exist := planner.Nodes[i][depth][state]; exist {
+				nodes[i] = node
+			} else {
+				nodes[i] = planner.Pool.Get().(*Node)
+				planner.Nodes[i][depth][state] = nodes[i]
 			}
-			node := planner.Nodes[i][depth][state]
-			if node.RolloutCnt < config.ExpandThresh {
-				node.RolloutCnt++
+			if nodes[i].RolloutCnt < config.ExpandThresh {
+				nodes[i].RolloutCnt++
 				nxtRollout[i] = true
 			}
 		}
-		validActions := make(agentaction.Actions, len(planner.MapData.ValidActions[state.Pos]))
-		copy(validActions, planner.MapData.ValidActions[state.Pos])
+		validActions := make(agentaction.Actions, len(planner.MapData.ValidActions[state.Pos.R][state.Pos.C]))
+		copy(validActions, planner.MapData.ValidActions[state.Pos.R][state.Pos.C])
 		if !state.HasItem && items[i][state.Pos] > 0 {
 			validActions = append(validActions, agentaction.PICKUP)
-		} else if state.HasItem && state.Pos == planner.MapData.DepotPos {
+		}
+		if state.HasItem && state.Pos == planner.MapData.DepotPos {
 			validActions = append(validActions, agentaction.CLEAR)
-		} else {
-			validActions = append(validActions, agentaction.STAY)
 		}
 		minDist := planner.MapData.MinDist
 		if nxtRollout[i] {
@@ -156,8 +171,8 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 					// アイテムをもっていないなら、アイテムのある頂点のうち最も近い頂点を目的地にする
 					d := math.MaxInt
 					for pos, itemNum := range items[i] {
-						if itemNum > 0 && d > minDist[state.Pos][pos] {
-							d = minDist[state.Pos][pos]
+						if itemNum > 0 && d > minDist[state.Pos.R][state.Pos.C][pos.R][pos.C] {
+							d = minDist[state.Pos.R][state.Pos.C][pos.R][pos.C]
 							targetPos[i] = pos
 						}
 					}
@@ -179,7 +194,7 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 				optimal := agentaction.Actions{}
 				for _, action := range validActions {
 					nxtPos := agentstate.NextPosSA(state.Pos, action, planner.MapData)
-					if minDist[state.Pos][targetPos[i]] > minDist[nxtPos][targetPos[i]] {
+					if minDist[state.Pos.R][state.Pos.C][targetPos[i].R][targetPos[i].C] > minDist[nxtPos.R][nxtPos.C][targetPos[i].R][targetPos[i].C] {
 						optimal = append(optimal, action)
 					}
 				}
@@ -187,29 +202,38 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 			}
 		} else {
 			// UCB アルゴリズムに従って行動選択
-			node := planner.Nodes[i][depth][state]
-			actions[i] = node.Select(validActions)
+			actions[i] = nodes[i].Select(validActions)
 		}
 	}
 	actionsCopy := make(agentaction.Actions, config.NumAgents)
 	copy(actionsCopy, actions)
 	nxtStates, rewards, _ := agentstate.Next(curStates, actions, items, planner.MapData, planner.RandGen)
 	cumRewards := planner.update(turn+1, depth+1, nxtStates, items, nxtRollout, targetPos)
-	for i, state := range curStates {
+	for i := 0; i < config.NumAgents; i++ {
 		cumRewards[i] = rewards[i] + config.DiscountFactor*cumRewards[i]
 		if !rollout[i] {
-			node := planner.Nodes[i][depth][state]
-			decay := math.Pow(config.DecayRate, float64(planner.IterIdx-node.LastUpdate))
-			node.TotalCnt *= decay
-			for action := range node.SelectCnt {
-				node.SelectCnt[action] *= decay
-				node.CumReward[action] *= decay
+			decay := math.Pow(config.DecayRate, float64(planner.IterIdx-nodes[i].LastUpdate))
+			nodes[i].TotalCnt *= decay
+			for action := range nodes[i].SelectCnt {
+				nodes[i].SelectCnt[action] *= decay
+				nodes[i].CumReward[action] *= decay
 			}
-			node.TotalCnt++
-			node.SelectCnt[actions[i]]++
-			node.CumReward[actions[i]] += cumRewards[i]
-			node.LastUpdate = planner.IterIdx
+			nodes[i].TotalCnt++
+			nodes[i].SelectCnt[actions[i]]++
+			nodes[i].CumReward[actions[i]] += cumRewards[i]
+			nodes[i].LastUpdate = planner.IterIdx
 		}
 	}
 	return cumRewards
+}
+
+func (planner *Planner) Free() {
+	for i := range planner.Nodes {
+		for j := range planner.Nodes[i] {
+			for _, node := range planner.Nodes[i][j] {
+				node.Reset()
+				planner.Pool.Put(node)
+			}
+		}
+	}
 }
