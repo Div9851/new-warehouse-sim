@@ -87,29 +87,11 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 			break
 		}
 		// 行動決定フェーズ
-		var wg sync.WaitGroup
-		actions := make(agentaction.Actions, config.NumAgents)
-		for id := 0; id < config.NumAgents; id++ {
-			wg.Add(1)
-			go func(id int) {
-				planner := mcts.New(id, sim.MapData, sim.RandGens[id], nodePool)
-				items := make([]map[mapdata.Pos]int, config.NumAgents)
-				for i := 0; i < config.NumAgents; i++ {
-					if i == id {
-						items[i] = sim.Items[i]
-					} else {
-						items[i] = make(map[mapdata.Pos]int)
-					}
-				}
-				for i := 0; i < config.NumIters; i++ {
-					planner.Update(sim.Turn, sim.States, items)
-				}
-				actions[id] = planner.BestAction(sim.States)
-				planner.Free()
-				wg.Done()
-			}(id)
+		planner := mcts.New(sim.MapData, sim.RandGens[0], nodePool)
+		for iter := 0; iter < config.NumIters; iter++ {
+			planner.Update(sim.Turn, sim.States, sim.Items)
 		}
-		wg.Wait()
+		actions := planner.BestActions(sim.States)
 		// 行動フェーズ
 		sim.Next(actions)
 	}

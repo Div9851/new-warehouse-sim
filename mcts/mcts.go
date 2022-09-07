@@ -87,18 +87,16 @@ func (node *Node) Reset() {
 
 type Planner struct {
 	Nodes    [][]map[agentstate.State]*Node // [id][depth][state]
-	Id       int
 	MapData  *mapdata.MapData
 	RandGen  *rand.Rand
 	NodePool *sync.Pool
 	IterIdx  int
 }
 
-func New(id int, mapData *mapdata.MapData, randGen *rand.Rand, nodePool *sync.Pool) *Planner {
+func New(mapData *mapdata.MapData, randGen *rand.Rand, nodePool *sync.Pool) *Planner {
 	nodes := make([][]map[agentstate.State]*Node, config.NumAgents)
 	return &Planner{
 		Nodes:    nodes,
-		Id:       id,
 		MapData:  mapData,
 		RandGen:  randGen,
 		NodePool: nodePool,
@@ -106,10 +104,13 @@ func New(id int, mapData *mapdata.MapData, randGen *rand.Rand, nodePool *sync.Po
 	}
 }
 
-func (planner *Planner) BestAction(curStates agentstate.States) agentaction.Action {
-	state := curStates[planner.Id]
-	node := planner.Nodes[planner.Id][0][state]
-	return node.BestAction()
+func (planner *Planner) BestActions(curStates agentstate.States) agentaction.Actions {
+	actions := make(agentaction.Actions, config.NumAgents)
+	for i, state := range curStates {
+		node := planner.Nodes[i][0][state]
+		actions[i] = node.BestAction()
+	}
+	return actions
 }
 
 func (planner *Planner) Update(turn int, curStates agentstate.States, items []map[mapdata.Pos]int) {
