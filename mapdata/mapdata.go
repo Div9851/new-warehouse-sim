@@ -18,6 +18,7 @@ type MapData struct {
 	NextPos      [][][]Pos
 	ValidActions [][]agentaction.Actions
 	MinDist      [][][][]int
+	SubGoals     map[Pos]struct{}
 }
 
 func New(text []string) *MapData {
@@ -27,6 +28,7 @@ func New(text []string) *MapData {
 	nextPos := make([][][]Pos, h)
 	validActions := make([][]agentaction.Actions, h)
 	minDist := make([][][][]int, h)
+	subGoals := make(map[Pos]struct{})
 	for r := 0; r < h; r++ {
 		nextPos[r] = make([][]Pos, w)
 		validActions[r] = make([]agentaction.Actions, w)
@@ -63,6 +65,10 @@ func New(text []string) *MapData {
 			}
 			validActions[r][c] = actions
 			minDist[r][c] = bfs(text, h, w, Pos{R: r, C: c})
+			// 交差点をサブゴールとする
+			if len(actions) >= 4 {
+				subGoals[Pos{R: r, C: c}] = struct{}{}
+			}
 		}
 	}
 
@@ -75,6 +81,7 @@ func New(text []string) *MapData {
 		NextPos:      nextPos,
 		ValidActions: validActions,
 		MinDist:      minDist,
+		SubGoals:     subGoals,
 	}
 }
 

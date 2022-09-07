@@ -3,6 +3,7 @@ package sim
 import (
 	"fmt"
 	"math/rand"
+	"sort"
 	"sync"
 
 	"github.com/Div9851/new-warehouse-sim/agentaction"
@@ -12,10 +13,16 @@ import (
 	"github.com/Div9851/new-warehouse-sim/mcts"
 )
 
+type Bid struct {
+	Id       int
+	SubGoals []mapdata.Pos
+}
+
 type Simulator struct {
 	Turn        int
 	States      agentstate.States
 	Items       []map[mapdata.Pos]int
+	Budgets     []int
 	LastActions agentaction.Actions
 	ItemsCount  []int
 	PickUpCount []int
@@ -33,6 +40,7 @@ func New(mapData *mapdata.MapData, seed int64, verbose bool) *Simulator {
 	randGens := []*rand.Rand{}
 	states := agentstate.States{}
 	items := []map[mapdata.Pos]int{}
+	budgets := []int{}
 	usedPos := make(map[mapdata.Pos]struct{})
 	subGoals := make([][]mapdata.Pos, config.NumAgents)
 	reserved := make(map[mapdata.Pos]int)
@@ -51,6 +59,7 @@ func New(mapData *mapdata.MapData, seed int64, verbose bool) *Simulator {
 		}
 		states = append(states, newState)
 		items = append(items, make(map[mapdata.Pos]int))
+		budgets = append(budgets, config.InitialBudget)
 		randGen := rand.New(rand.NewSource(simRandGen.Int63()))
 		randGens = append(randGens, randGen)
 	}
@@ -61,6 +70,7 @@ func New(mapData *mapdata.MapData, seed int64, verbose bool) *Simulator {
 		Turn:        0,
 		States:      states,
 		Items:       items,
+		Budgets:     budgets,
 		ItemsCount:  itemsCount,
 		PickUpCount: pickUpCount,
 		ClearCount:  clearCount,
@@ -86,12 +96,42 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 		if sim.Turn == config.LastTurn {
 			break
 		}
-		// 行動決定フェーズ
+		// プランニングフェーズ
 		planner := mcts.New(sim.MapData, sim.RandGens[0], nodePool)
 		for iter := 0; iter < config.NumIters; iter++ {
-			planner.Update(sim.Turn, sim.States, sim.Items)
+			planner.Update(sim.Turn, sim.States, sim.Items, sim.SubGoals)
 		}
-		actions := planner.BestActions(sim.States)
+		// 予約フェーズ
+		bids := []Bid{}
+		for id := 0; id < config.NumAgents; id++ {
+			// 既に予約している頂点があるなら新たな予約はしない
+			if len(sim.SubGoals[id]) > 0 {
+				continue
+			}
+			subGoals := planner.GetSubGoals(id, sim.States[id], sim.Items[id], sim.Reserved)
+			if len(subGoals) > sim.Budgets[id] {
+				continue
+			}
+			bids = append(bids, Bid{
+				Id:       id,
+				SubGoals: subGoals,
+			})
+		}
+		sort.Slice(bids, func(i, j int) bool { return len(bids[i].SubGoals) < len(bids[j].SubGoals) })
+	L:
+		for _, bid := range bids {
+			for _, subGoal := range bid.SubGoals {
+				if _, exist := sim.Reserved[subGoal]; exist {
+					continue L
+				}
+			}
+			for _, subGoal := range bid.SubGoals {
+				sim.Reserved[subGoal] = bid.Id
+			}
+			sim.SubGoals[bid.Id] = bid.SubGoals
+			sim.Budgets[bid.Id] -= len(bid.SubGoals)
+		}
+		actions := planner.BestActions(sim.States, sim.Items)
 		// 行動フェーズ
 		sim.Next(actions)
 	}
@@ -106,13 +146,22 @@ func (sim *Simulator) Next(actions agentaction.Actions) {
 	for i := 0; i < config.NumAgents; i++ {
 		if newItem[i] {
 			sim.ItemsCount[i]++
+			sim.Budgets[i] += config.IncreaseBudget
 		}
 		// PICKUP や CLEAR は可能なときにしか選ばないと仮定
 		if actions[i] == agentaction.PICKUP {
 			sim.PickUpCount[i]++
+			for len(sim.SubGoals[i]) > 0 {
+				delete(sim.Reserved, sim.SubGoals[i][0])
+				sim.SubGoals[i] = sim.SubGoals[i][1:]
+			}
 		}
 		if actions[i] == agentaction.CLEAR {
 			sim.ClearCount[i]++
+			for len(sim.SubGoals[i]) > 0 {
+				delete(sim.Reserved, sim.SubGoals[i][0])
+				sim.SubGoals[i] = sim.SubGoals[i][1:]
+			}
 		}
 		if len(sim.SubGoals[i]) > 0 && sim.States[i].Pos == sim.SubGoals[i][0] {
 			delete(sim.Reserved, sim.SubGoals[i][0])
@@ -141,6 +190,7 @@ func (sim *Simulator) Dump() {
 			fmt.Printf("last action: %s\n", sim.LastActions[i].ToStr())
 		}
 		fmt.Printf("pos: %v\n", state.Pos)
+		fmt.Printf("budget: %d\n", sim.Budgets[i])
 		fmt.Printf("sub goals: %v\n", sim.SubGoals[i])
 		fmt.Printf("items count: %d ", sim.ItemsCount[i])
 		fmt.Printf("pickup count: %d ", sim.PickUpCount[i])
