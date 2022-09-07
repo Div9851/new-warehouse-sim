@@ -193,7 +193,7 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 			} else {
 				optimal := agentaction.Actions{}
 				for _, action := range validActions {
-					nxtPos := agentstate.NextPosSA(state.Pos, action, planner.MapData)
+					nxtPos := planner.MapData.NextPos[state.Pos.R][state.Pos.C][action]
 					if minDist[state.Pos.R][state.Pos.C][targetPos[i].R][targetPos[i].C] > minDist[nxtPos.R][nxtPos.C][targetPos[i].R][targetPos[i].C] {
 						optimal = append(optimal, action)
 					}

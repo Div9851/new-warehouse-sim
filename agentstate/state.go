@@ -26,7 +26,7 @@ func Next(states States, actions agentaction.Actions, items []map[mapdata.Pos]in
 	nxtStates := make(States, n)
 	rewards := make([]float64, n)
 	newItem := make([]bool, n)
-	nxtPos, collision := NextPosMA(curPos, actions, mapData)
+	nxtPos, collision := NextPos(curPos, actions, mapData)
 	for i := range states {
 		if collision[i] {
 			rewards[i] += config.CollisionPenalty
@@ -60,25 +60,6 @@ func Next(states States, actions agentaction.Actions, items []map[mapdata.Pos]in
 		}
 	}
 	return nxtStates, rewards, newItem
-}
-
-func NextPosSA(curPos mapdata.Pos, action agentaction.Action, mapData *mapdata.MapData) mapdata.Pos {
-	h, w := mapData.H, mapData.W
-	nr, nc := curPos.R, curPos.C
-	switch action {
-	case agentaction.UP:
-		nr--
-	case agentaction.DOWN:
-		nr++
-	case agentaction.LEFT:
-		nc--
-	case agentaction.RIGHT:
-		nc++
-	}
-	if 0 > nr || nr >= h || 0 > nc || nc >= w || mapData.Text[nr][nc] == '#' {
-		return curPos
-	}
-	return mapdata.Pos{R: nr, C: nc}
 }
 
 /*
@@ -136,12 +117,11 @@ func NextPosMA(curPos []mapdata.Pos, actions agentaction.Actions, mapData *mapda
 }
 */
 
-func NextPosMA(curPos []mapdata.Pos, actions agentaction.Actions, mapData *mapdata.MapData) ([]mapdata.Pos, []bool) {
+func NextPos(curPos []mapdata.Pos, actions agentaction.Actions, mapData *mapdata.MapData) ([]mapdata.Pos, []bool) {
 	n := len(curPos)
-	nxtPos := []mapdata.Pos{}
+	nxtPos := make([]mapdata.Pos, n)
 	for i, cur := range curPos {
-		nxt := NextPosSA(cur, actions[i], mapData)
-		nxtPos = append(nxtPos, nxt)
+		nxtPos[i] = mapData.NextPos[cur.R][cur.C][actions[i]]
 	}
 	predId := make([]int, n)
 	collision := make([]bool, n)

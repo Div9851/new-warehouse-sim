@@ -15,6 +15,7 @@ type MapData struct {
 	H, W         int
 	AllPos       []Pos
 	DepotPos     Pos
+	NextPos      [][][]Pos
 	ValidActions [][]agentaction.Actions
 	MinDist      [][][][]int
 }
@@ -23,32 +24,41 @@ func New(text []string) *MapData {
 	h, w := len(text), len(text[0])
 	var allPos []Pos
 	var depotPos Pos
-	validActions := [][]agentaction.Actions{}
-	minDist := [][][][]int{}
+	nextPos := make([][][]Pos, h)
+	validActions := make([][]agentaction.Actions, h)
+	minDist := make([][][][]int, h)
 	for r := 0; r < h; r++ {
-		validActions = append(validActions, make([]agentaction.Actions, w))
-		minDist = append(minDist, make([][][]int, w))
+		nextPos[r] = make([][]Pos, w)
+		validActions[r] = make([]agentaction.Actions, w)
+		minDist[r] = make([][][]int, w)
 		for c := 0; c < w; c++ {
 			if text[r][c] == '#' {
 				continue
 			}
 			if text[r][c] == 'D' {
 				depotPos = Pos{r, c}
-
 			} else {
 				allPos = append(allPos, Pos{r, c})
 			}
+			nextPos[r][c] = make([]Pos, agentaction.COUNT)
+			nextPos[r][c][agentaction.STAY] = Pos{R: r, C: c}
+			nextPos[r][c][agentaction.PICKUP] = Pos{R: r, C: c}
+			nextPos[r][c][agentaction.CLEAR] = Pos{R: r, C: c}
 			actions := agentaction.Actions{agentaction.STAY}
 			if r > 0 && text[r-1][c] != '#' {
+				nextPos[r][c][agentaction.UP] = Pos{R: r - 1, C: c}
 				actions = append(actions, agentaction.UP)
 			}
 			if r+1 < h && text[r+1][c] != '#' {
+				nextPos[r][c][agentaction.DOWN] = Pos{R: r + 1, C: c}
 				actions = append(actions, agentaction.DOWN)
 			}
 			if c > 0 && text[r][c-1] != '#' {
+				nextPos[r][c][agentaction.LEFT] = Pos{R: r, C: c - 1}
 				actions = append(actions, agentaction.LEFT)
 			}
 			if c+1 < w && text[r][c+1] != '#' {
+				nextPos[r][c][agentaction.RIGHT] = Pos{R: r, C: c + 1}
 				actions = append(actions, agentaction.RIGHT)
 			}
 			validActions[r][c] = actions
@@ -62,6 +72,7 @@ func New(text []string) *MapData {
 		W:            w,
 		AllPos:       allPos,
 		DepotPos:     depotPos,
+		NextPos:      nextPos,
 		ValidActions: validActions,
 		MinDist:      minDist,
 	}
