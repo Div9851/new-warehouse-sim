@@ -86,23 +86,23 @@ func (node *Node) Reset() {
 }
 
 type Planner struct {
-	Nodes   [][]map[agentstate.State]*Node // [id][depth][state]
-	Id      int
-	MapData *mapdata.MapData
-	RandGen *rand.Rand
-	Pool    *sync.Pool
-	IterIdx int
+	Nodes    [][]map[agentstate.State]*Node // [id][depth][state]
+	Id       int
+	MapData  *mapdata.MapData
+	RandGen  *rand.Rand
+	NodePool *sync.Pool
+	IterIdx  int
 }
 
-func New(id int, mapData *mapdata.MapData, randGen *rand.Rand, pool *sync.Pool) *Planner {
+func New(id int, mapData *mapdata.MapData, randGen *rand.Rand, nodePool *sync.Pool) *Planner {
 	nodes := make([][]map[agentstate.State]*Node, config.NumAgents)
 	return &Planner{
-		Nodes:   nodes,
-		Id:      id,
-		MapData: mapData,
-		RandGen: randGen,
-		Pool:    pool,
-		IterIdx: 0,
+		Nodes:    nodes,
+		Id:       id,
+		MapData:  mapData,
+		RandGen:  randGen,
+		NodePool: nodePool,
+		IterIdx:  0,
 	}
 }
 
@@ -114,15 +114,14 @@ func (planner *Planner) BestAction(curStates agentstate.States) agentaction.Acti
 
 func (planner *Planner) Update(turn int, curStates agentstate.States, items []map[mapdata.Pos]int) {
 	rollout := make([]bool, config.NumAgents)
-	targetPos := []mapdata.Pos{}
-	itemsCopy := []map[mapdata.Pos]int{}
+	targetPos := make([]mapdata.Pos, config.NumAgents)
+	itemsCopy := make([]map[mapdata.Pos]int, config.NumAgents)
 	for i := 0; i < config.NumAgents; i++ {
-		targetPos = append(targetPos, mapdata.NonePos)
-		m := make(map[mapdata.Pos]int)
+		targetPos[i] = mapdata.NonePos
+		itemsCopy[i] = make(map[mapdata.Pos]int)
 		for pos, itemNum := range items[i] {
-			m[pos] = itemNum
+			itemsCopy[i][pos] = itemNum
 		}
-		itemsCopy = append(itemsCopy, m)
 	}
 	planner.update(turn, 0, curStates, itemsCopy, rollout, targetPos)
 	planner.IterIdx++
@@ -144,7 +143,7 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 			if node, exist := planner.Nodes[i][depth][state]; exist {
 				nodes[i] = node
 			} else {
-				nodes[i] = planner.Pool.Get().(*Node)
+				nodes[i] = planner.NodePool.Get().(*Node)
 				planner.Nodes[i][depth][state] = nodes[i]
 			}
 			if nodes[i].RolloutCnt < config.ExpandThresh {
@@ -230,7 +229,7 @@ func (planner *Planner) Free() {
 		for j := range planner.Nodes[i] {
 			for _, node := range planner.Nodes[i][j] {
 				node.Reset()
-				planner.Pool.Put(node)
+				planner.NodePool.Put(node)
 			}
 		}
 	}

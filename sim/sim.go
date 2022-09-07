@@ -74,6 +74,11 @@ func New(mapData *mapdata.MapData, seed int64, verbose bool) *Simulator {
 }
 
 func (sim *Simulator) Run() ([]int, []int, []int) {
+	var nodePool = &sync.Pool{
+		New: func() interface{} {
+			return mcts.NewNode()
+		},
+	}
 	for {
 		if sim.Verbose {
 			sim.Dump()
@@ -83,16 +88,11 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 		}
 		// 行動決定フェーズ
 		var wg sync.WaitGroup
-		var pool = &sync.Pool{
-			New: func() interface{} {
-				return mcts.NewNode()
-			},
-		}
 		actions := make(agentaction.Actions, config.NumAgents)
 		for id := 0; id < config.NumAgents; id++ {
 			wg.Add(1)
 			go func(id int) {
-				planner := mcts.New(id, sim.MapData, sim.RandGens[id], pool)
+				planner := mcts.New(id, sim.MapData, sim.RandGens[id], nodePool)
 				items := make([]map[mapdata.Pos]int, config.NumAgents)
 				for i := 0; i < config.NumAgents; i++ {
 					if i == id {
@@ -105,6 +105,7 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 					planner.Update(sim.Turn, sim.States, items)
 				}
 				actions[id] = planner.BestAction(sim.States)
+				planner.Free()
 				wg.Done()
 			}(id)
 		}
