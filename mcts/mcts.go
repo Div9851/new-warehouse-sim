@@ -205,8 +205,6 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 			actions[i] = nodes[i].Select(validActions)
 		}
 	}
-	actionsCopy := make(agentaction.Actions, config.NumAgents)
-	copy(actionsCopy, actions)
 	nxtStates, rewards, _ := agentstate.Next(curStates, actions, items, planner.MapData, planner.RandGen)
 	cumRewards := planner.update(turn+1, depth+1, nxtStates, items, nxtRollout, targetPos)
 	for i := 0; i < config.NumAgents; i++ {
