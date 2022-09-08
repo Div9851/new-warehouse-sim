@@ -99,18 +99,16 @@ func GetValidActions(state agentstate.State, items map[mapdata.Pos]int, mapData 
 
 type Planner struct {
 	Nodes    [][]map[agentstate.State]*Node // [id][depth][state]
-	Id       int
 	MapData  *mapdata.MapData
 	RandGen  *rand.Rand
 	NodePool *sync.Pool
 	IterIdx  int
 }
 
-func New(id int, mapData *mapdata.MapData, randGen *rand.Rand, nodePool *sync.Pool) *Planner {
+func New(mapData *mapdata.MapData, randGen *rand.Rand, nodePool *sync.Pool) *Planner {
 	nodes := make([][]map[agentstate.State]*Node, config.NumAgents)
 	return &Planner{
 		Nodes:    nodes,
-		Id:       id,
 		MapData:  mapData,
 		RandGen:  randGen,
 		NodePool: nodePool,
@@ -118,10 +116,14 @@ func New(id int, mapData *mapdata.MapData, randGen *rand.Rand, nodePool *sync.Po
 	}
 }
 
-func (planner *Planner) BestAction(curState agentstate.State, items map[mapdata.Pos]int) agentaction.Action {
-	node := planner.Nodes[planner.Id][0][curState]
-	validActions := GetValidActions(curState, items, planner.MapData)
-	return node.BestAction(validActions)
+func (planner *Planner) BestActions(curStates agentstate.States, items []map[mapdata.Pos]int) agentaction.Actions {
+	actions := make(agentaction.Actions, config.NumAgents)
+	for i, state := range curStates {
+		node := planner.Nodes[i][0][state]
+		validActions := GetValidActions(state, items[i], planner.MapData)
+		actions[i] = node.BestAction(validActions)
+	}
+	return actions
 }
 
 func (planner *Planner) Update(turn int, curStates agentstate.States, items []map[mapdata.Pos]int, subGoals [][]mapdata.Pos) {
