@@ -42,9 +42,13 @@ func main() {
 		".##.##.",
 	}
 	mapData := mapdata.New(text)
-	clearRate := make([][]float64, config.NumAgents)
+	itemsCountHistory := make([][]float64, config.NumAgents)
+	clearCountHistory := make([][]float64, config.NumAgents)
+	clearRateHistory := make([][]float64, config.NumAgents)
 	for i := 0; i < config.NumAgents; i++ {
-		clearRate[i] = make([]float64, *numRun)
+		itemsCountHistory[i] = make([]float64, *numRun)
+		clearCountHistory[i] = make([]float64, *numRun)
+		clearRateHistory[i] = make([]float64, *numRun)
 	}
 	var wg sync.WaitGroup
 	for run := 0; run < *numRun; run++ {
@@ -55,16 +59,28 @@ func main() {
 			itemsCount, _, clearCount := sim.Run()
 			for i := 0; i < config.NumAgents; i++ {
 				r := float64(clearCount[i]) / float64(itemsCount[i])
-				clearRate[i][run] = r
+				itemsCountHistory[i][run] = float64(itemsCount[i])
+				clearCountHistory[i][run] = float64(clearCount[i])
+				clearRateHistory[i][run] = r
 			}
 			fmt.Printf("--- run %d end ---\n", run)
 			wg.Done()
 		}(run)
 	}
 	wg.Wait()
+	fmt.Println("--items count--")
+	for i := 0; i < config.NumAgents; i++ {
+		average, variance := calc(itemsCountHistory[i])
+		fmt.Printf("AGENT %d: avg. %f var. %f\n", i, average, variance)
+	}
+	fmt.Println("--clear count--")
+	for i := 0; i < config.NumAgents; i++ {
+		average, variance := calc(clearCountHistory[i])
+		fmt.Printf("AGENT %d: avg. %f var. %f\n", i, average, variance)
+	}
 	fmt.Println("--clear rate--")
 	for i := 0; i < config.NumAgents; i++ {
-		average, variance := calc(clearRate[i])
+		average, variance := calc(clearRateHistory[i])
 		fmt.Printf("AGENT %d: avg. %f var. %f\n", i, average, variance)
 	}
 }

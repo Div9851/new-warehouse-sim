@@ -9,7 +9,7 @@ const (
 	ExpandThresh     = 1
 	PickupReward     = 100
 	ClearReward      = 100
-	SubGoalReward    = 10
+	SubGoalReward    = 100
 	CollisionPenalty = -5
 	StayPenalty      = 0
 	DiscountFactor   = 0.9
