@@ -17,16 +17,14 @@ import (
 type Bid struct {
 	Id       int
 	SubGoals []mapdata.Pos
-	Action   agentaction.Action
 	Value    float64
 }
 
-func GetSubGoals(state agentstate.State, items map[mapdata.Pos]int, reserved map[mapdata.Pos]int, mapData *mapdata.MapData) ([]mapdata.Pos, agentaction.Action, int) {
+func GetSubGoals(state agentstate.State, items map[mapdata.Pos]int, reserved map[mapdata.Pos]int, mapData *mapdata.MapData) ([]mapdata.Pos, int) {
 	que := []mapdata.Pos{state.Pos}
 	visited := make(map[mapdata.Pos]struct{})
 	visited[state.Pos] = struct{}{}
 	prevPos := make(map[mapdata.Pos]mapdata.Pos)
-	prevAction := make(map[mapdata.Pos]agentaction.Action)
 	last := mapdata.NonePos
 	for len(que) > 0 {
 		cur := que[0]
@@ -46,28 +44,25 @@ func GetSubGoals(state agentstate.State, items map[mapdata.Pos]int, reserved map
 			que = append(que, nxt)
 			visited[nxt] = struct{}{}
 			prevPos[nxt] = cur
-			prevAction[nxt] = action
 		}
 	}
 	if last == mapdata.NonePos {
-		return nil, agentaction.COUNT, math.MaxInt
+		return nil, math.MaxInt
 	}
 	subGoals := []mapdata.Pos{}
 	cur := last
-	action := agentaction.COUNT
 	turns := 0
 	for cur != state.Pos {
 		if _, exist := mapData.SubGoals[cur]; exist || cur == last {
 			subGoals = append(subGoals, cur)
 		}
 		cur = prevPos[cur]
-		action = prevAction[cur]
 		turns++
 	}
 	for i := 0; i*2 < len(subGoals); i++ {
 		subGoals[i], subGoals[len(subGoals)-i-1] = subGoals[len(subGoals)-i-1], subGoals[i]
 	}
-	return subGoals, action, turns
+	return subGoals, turns
 }
 
 type Simulator struct {
@@ -174,18 +169,17 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 				}
 				cur.Pos = sim.MapData.NextPos[cur.Pos.R][cur.Pos.C][action]
 			}
-			subGoals, action, greedyTurns := GetSubGoals(sim.States[id], sim.Items[id], sim.Reserved, sim.MapData)
+			subGoals, greedyTurns := GetSubGoals(sim.States[id], sim.Items[id], sim.Reserved, sim.MapData)
 			if len(subGoals) == 0 || greedyTurns >= mctsTurns {
 				continue
 			}
 			bids = append(bids, Bid{
 				Id:       id,
 				SubGoals: subGoals,
-				Action:   action,
 				Value:    sim.Budgets[id] * (1 - float64(greedyTurns)/float64(mctsTurns)),
 			})
 		}
-		sort.Slice(bids, func(i, j int) bool { return bids[i].Value < bids[j].Value })
+		sort.Slice(bids, func(i, j int) bool { return bids[i].Value > bids[j].Value })
 	L:
 		for _, bid := range bids {
 			for _, subGoal := range bid.SubGoals {
@@ -198,7 +192,6 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 			}
 			sim.SubGoals[bid.Id] = bid.SubGoals
 			sim.Budgets[bid.Id] -= bid.Value
-			actions[bid.Id] = bid.Action
 		}
 		// 行動フェーズ
 		sim.Next(actions)
