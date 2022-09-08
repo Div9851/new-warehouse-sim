@@ -97,10 +97,27 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 			break
 		}
 		// プランニングフェーズ
-		planner := mcts.New(sim.MapData, sim.RandGens[0], nodePool)
-		for iter := 0; iter < config.NumIters; iter++ {
-			planner.Update(sim.Turn, sim.States, sim.Items, sim.SubGoals)
+		var wg sync.WaitGroup
+		planners := make([]*mcts.Planner, config.NumAgents)
+		for id := 0; id < config.NumAgents; id++ {
+			planners[id] = mcts.New(id, sim.MapData, sim.RandGens[id], nodePool)
+			wg.Add(1)
+			go func(id int) {
+				items := make([]map[mapdata.Pos]int, config.NumAgents)
+				for i := 0; i < config.NumAgents; i++ {
+					if i == id {
+						items[i] = sim.Items[i]
+					} else {
+						items[i] = make(map[mapdata.Pos]int)
+					}
+				}
+				for iter := 0; iter < config.NumIters; iter++ {
+					planners[id].Update(sim.Turn, sim.States, items, sim.SubGoals)
+				}
+				wg.Done()
+			}(id)
 		}
+		wg.Wait()
 		// 予約フェーズ
 		bids := []Bid{}
 		for id := 0; id < config.NumAgents; id++ {
@@ -108,7 +125,7 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 			if len(sim.SubGoals[id]) > 0 {
 				continue
 			}
-			subGoals := planner.GetSubGoals(id, sim.States[id], sim.Items[id], sim.Reserved)
+			subGoals := planners[id].GetSubGoals(id, sim.States[id], sim.Items[id], sim.Reserved)
 			if len(subGoals) > sim.Budgets[id] {
 				continue
 			}
@@ -131,7 +148,10 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 			sim.SubGoals[bid.Id] = bid.SubGoals
 			sim.Budgets[bid.Id] -= len(bid.SubGoals)
 		}
-		actions := planner.BestActions(sim.States, sim.Items)
+		actions := make(agentaction.Actions, config.NumAgents)
+		for id := 0; id < config.NumAgents; id++ {
+			actions[id] = planners[id].BestAction(sim.States[id], sim.Items[id])
+		}
 		// 行動フェーズ
 		sim.Next(actions)
 	}
