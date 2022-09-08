@@ -16,31 +16,77 @@ import (
 type Bid struct {
 	Id       int
 	SubGoals []mapdata.Pos
+	Value    float64
+}
+
+func GetSubGoals(state agentstate.State, items map[mapdata.Pos]int, reserved map[mapdata.Pos]int, mapData *mapdata.MapData) ([]mapdata.Pos, int) {
+	que := []mapdata.Pos{state.Pos}
+	visited := make(map[mapdata.Pos]struct{})
+	visited[state.Pos] = struct{}{}
+	prevPos := make(map[mapdata.Pos]mapdata.Pos)
+	last := mapdata.NonePos
+	for len(que) > 0 {
+		cur := que[0]
+		que = que[1:]
+		if (!state.HasItem && items[cur] > 0) || (state.HasItem && cur == mapData.DepotPos) {
+			last = cur
+			break
+		}
+		for _, action := range mapData.ValidActions[cur.R][cur.C] {
+			nxt := mapData.NextPos[cur.R][cur.C][action]
+			if _, exist := visited[nxt]; exist {
+				continue
+			}
+			if _, exist := reserved[nxt]; exist {
+				continue
+			}
+			que = append(que, nxt)
+			visited[nxt] = struct{}{}
+			prevPos[nxt] = cur
+		}
+	}
+	if last == mapdata.NonePos {
+		return nil, -1
+	}
+	subGoals := []mapdata.Pos{}
+	cur := last
+	turns := 0
+	for cur != state.Pos {
+		if _, exist := mapData.SubGoals[cur]; exist || cur == last {
+			subGoals = append(subGoals, cur)
+		}
+		cur = prevPos[cur]
+		turns++
+	}
+	for i := 0; i*2 < len(subGoals); i++ {
+		subGoals[i], subGoals[len(subGoals)-i-1] = subGoals[len(subGoals)-i-1], subGoals[i]
+	}
+	return subGoals, turns
 }
 
 type Simulator struct {
-	Turn        int
-	States      agentstate.States
-	Items       []map[mapdata.Pos]int
-	Budgets     []int
-	LastActions agentaction.Actions
-	ItemsCount  []int
-	PickUpCount []int
-	ClearCount  []int
-	SubGoals    [][]mapdata.Pos
-	Reserved    map[mapdata.Pos]int
-	MapData     *mapdata.MapData
-	SimRandGen  *rand.Rand
-	RandGens    []*rand.Rand
-	Verbose     bool
+	Turn           int
+	States         agentstate.States
+	Items          []map[mapdata.Pos]int
+	Budgets        []float64
+	LastActions    agentaction.Actions
+	ItemsCount     []int
+	PickUpCount    []int
+	ClearCount     []int
+	SubGoals       [][]mapdata.Pos
+	Reserved       map[mapdata.Pos]int
+	MapData        *mapdata.MapData
+	SimRandGen     *rand.Rand
+	PlannerRandGen *rand.Rand
+	Verbose        bool
 }
 
 func New(mapData *mapdata.MapData, seed int64, verbose bool) *Simulator {
 	simRandGen := rand.New(rand.NewSource(seed))
-	randGens := []*rand.Rand{}
+	plannerRandGen := rand.New(rand.NewSource(simRandGen.Int63()))
 	states := agentstate.States{}
 	items := []map[mapdata.Pos]int{}
-	budgets := []int{}
+	budgets := []float64{}
 	usedPos := make(map[mapdata.Pos]struct{})
 	subGoals := make([][]mapdata.Pos, config.NumAgents)
 	reserved := make(map[mapdata.Pos]int)
@@ -60,26 +106,24 @@ func New(mapData *mapdata.MapData, seed int64, verbose bool) *Simulator {
 		states = append(states, newState)
 		items = append(items, make(map[mapdata.Pos]int))
 		budgets = append(budgets, config.InitialBudget)
-		randGen := rand.New(rand.NewSource(simRandGen.Int63()))
-		randGens = append(randGens, randGen)
 	}
 	itemsCount := make([]int, config.NumAgents)
 	pickUpCount := make([]int, config.NumAgents)
 	clearCount := make([]int, config.NumAgents)
 	return &Simulator{
-		Turn:        0,
-		States:      states,
-		Items:       items,
-		Budgets:     budgets,
-		ItemsCount:  itemsCount,
-		PickUpCount: pickUpCount,
-		ClearCount:  clearCount,
-		SubGoals:    subGoals,
-		Reserved:    reserved,
-		MapData:     mapData,
-		SimRandGen:  simRandGen,
-		RandGens:    randGens,
-		Verbose:     verbose,
+		Turn:           0,
+		States:         states,
+		Items:          items,
+		Budgets:        budgets,
+		ItemsCount:     itemsCount,
+		PickUpCount:    pickUpCount,
+		ClearCount:     clearCount,
+		SubGoals:       subGoals,
+		Reserved:       reserved,
+		MapData:        mapData,
+		SimRandGen:     simRandGen,
+		PlannerRandGen: plannerRandGen,
+		Verbose:        verbose,
 	}
 }
 
@@ -97,7 +141,7 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 			break
 		}
 		// プランニングフェーズ
-		planner := mcts.New(sim.MapData, sim.RandGens[0], nodePool)
+		planner := mcts.New(sim.MapData, sim.PlannerRandGen, nodePool)
 		for iter := 0; iter < config.NumIters; iter++ {
 			planner.Update(sim.Turn, sim.States, sim.Items, sim.SubGoals)
 		}
@@ -108,16 +152,29 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 			if len(sim.SubGoals[id]) > 0 {
 				continue
 			}
-			subGoals := planner.GetSubGoals(id, sim.States[id], sim.Items[id], sim.Reserved)
-			if len(subGoals) > sim.Budgets[id] {
+			cur := sim.States[id]
+			mctsTurns := -1
+			for depth := 0; depth < len(planner.Nodes[id]); depth++ {
+				node := planner.Nodes[id][depth][cur]
+				validActions := mcts.GetValidActions(cur, sim.Items[id], sim.MapData)
+				action := node.BestAction(validActions)
+				if action == agentaction.PICKUP || action == agentaction.CLEAR {
+					mctsTurns = depth
+					break
+				}
+				cur.Pos = sim.MapData.NextPos[cur.Pos.R][cur.Pos.C][action]
+			}
+			subGoals, greedyTurns := GetSubGoals(sim.States[id], sim.Items[id], sim.Reserved, sim.MapData)
+			if greedyTurns == -1 || greedyTurns >= mctsTurns {
 				continue
 			}
 			bids = append(bids, Bid{
 				Id:       id,
 				SubGoals: subGoals,
+				Value:    sim.Budgets[id] * (1 - float64(greedyTurns)/float64(mctsTurns)),
 			})
 		}
-		sort.Slice(bids, func(i, j int) bool { return len(bids[i].SubGoals) < len(bids[j].SubGoals) })
+		sort.Slice(bids, func(i, j int) bool { return bids[i].Value < bids[j].Value })
 	L:
 		for _, bid := range bids {
 			for _, subGoal := range bid.SubGoals {
@@ -129,7 +186,7 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 				sim.Reserved[subGoal] = bid.Id
 			}
 			sim.SubGoals[bid.Id] = bid.SubGoals
-			sim.Budgets[bid.Id] -= len(bid.SubGoals)
+			sim.Budgets[bid.Id] -= bid.Value
 		}
 		actions := planner.BestActions(sim.States, sim.Items)
 		// 行動フェーズ
@@ -190,7 +247,7 @@ func (sim *Simulator) Dump() {
 			fmt.Printf("last action: %s\n", sim.LastActions[i].ToStr())
 		}
 		fmt.Printf("pos: %v\n", state.Pos)
-		fmt.Printf("budget: %d\n", sim.Budgets[i])
+		fmt.Printf("budget: %f\n", sim.Budgets[i])
 		fmt.Printf("sub goals: %v\n", sim.SubGoals[i])
 		fmt.Printf("items count: %d ", sim.ItemsCount[i])
 		fmt.Printf("pickup count: %d ", sim.PickUpCount[i])

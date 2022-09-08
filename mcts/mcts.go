@@ -239,39 +239,6 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 	return cumRewards
 }
 
-func (planner *Planner) GetSubGoals(id int, curState agentstate.State, items map[mapdata.Pos]int, reserved map[mapdata.Pos]int) []mapdata.Pos {
-	var subGoals []mapdata.Pos
-	S := make(map[mapdata.Pos]struct{})
-	S[curState.Pos] = struct{}{}
-	for depth := 0; depth < len(planner.Nodes[id]); depth++ {
-		node := planner.Nodes[id][depth][curState]
-		if node == nil {
-			break
-		}
-		validActions := GetValidActions(curState, items, planner.MapData)
-		action := node.Select(validActions)
-		curPos := curState.Pos
-		nxtPos := planner.MapData.NextPos[curPos.R][curPos.C][action]
-		if _, exist := reserved[nxtPos]; exist {
-			break
-		}
-		_, inserted := S[nxtPos]
-		_, isSubGoal := planner.MapData.SubGoals[nxtPos]
-		if !inserted && isSubGoal {
-			subGoals = append(subGoals, nxtPos)
-			S[nxtPos] = struct{}{}
-		}
-		if action == agentaction.PICKUP || action == agentaction.CLEAR {
-			if !inserted {
-				subGoals = append(subGoals, nxtPos)
-			}
-			return subGoals
-		}
-		curState.Pos = nxtPos
-	}
-	return nil
-}
-
 func (planner *Planner) Free() {
 	for i := range planner.Nodes {
 		for j := range planner.Nodes[i] {
