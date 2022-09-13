@@ -15,7 +15,7 @@ type State struct {
 
 type States []State
 
-func Next(states States, actions agentaction.Actions, items []map[mapdata.Pos]int, mapData *mapdata.MapData, randGen *rand.Rand) (States, []float64, []bool) {
+func Next(states States, actions agentaction.Actions, items []map[mapdata.Pos]int, subGoals [][]mapdata.Pos, mapData *mapdata.MapData, randGen *rand.Rand) (States, []float64, []bool) {
 	var curPos []mapdata.Pos
 	var hasItem []bool
 	for _, state := range states {
@@ -30,6 +30,9 @@ func Next(states States, actions agentaction.Actions, items []map[mapdata.Pos]in
 	for i := range states {
 		if collision[i] {
 			rewards[i] += config.CollisionPenalty
+		}
+		if len(subGoals[i]) > 0 && nxtPos[i] == subGoals[i][0] {
+			rewards[i] += config.SubGoalReward
 		}
 		switch actions[i] {
 		case agentaction.STAY:

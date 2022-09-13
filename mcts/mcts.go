@@ -171,8 +171,25 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 		minDist := planner.MapData.MinDist
 		if nxtRollout[i] {
 			// ロールアウトポリシーに従って行動選択
+			if !state.HasItem && items[i][state.Pos] > 0 {
+				actions[i] = agentaction.PICKUP
+				targetPos[i] = mapdata.NonePos
+				subGoals[i] = nil
+				continue
+			}
+			if state.HasItem && state.Pos == planner.MapData.DepotPos {
+				actions[i] = agentaction.CLEAR
+				targetPos[i] = mapdata.NonePos
+				subGoals[i] = nil
+				continue
+			}
+			if state.Pos == targetPos[i] {
+				targetPos[i] = mapdata.NonePos
+			}
 			if targetPos[i] == mapdata.NonePos {
-				if state.HasItem {
+				if len(subGoals[i]) > 0 {
+					targetPos[i] = subGoals[i][0]
+				} else if state.HasItem {
 					// アイテムをもっているなら、デポを目的地にする
 					targetPos[i] = planner.MapData.DepotPos
 				} else {
@@ -191,33 +208,23 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 					}
 				}
 			}
-			if state.Pos == targetPos[i] {
-				if state.HasItem {
-					actions[i] = agentaction.CLEAR
-				} else {
-					actions[i] = agentaction.PICKUP
+			optimal := agentaction.Actions{}
+			for _, action := range validActions {
+				nxtPos := planner.MapData.NextPos[state.Pos.R][state.Pos.C][action]
+				if minDist[state.Pos.R][state.Pos.C][targetPos[i].R][targetPos[i].C] > minDist[nxtPos.R][nxtPos.C][targetPos[i].R][targetPos[i].C] {
+					optimal = append(optimal, action)
 				}
-				targetPos[i] = mapdata.NonePos
-			} else {
-				optimal := agentaction.Actions{}
-				for _, action := range validActions {
-					nxtPos := planner.MapData.NextPos[state.Pos.R][state.Pos.C][action]
-					if minDist[state.Pos.R][state.Pos.C][targetPos[i].R][targetPos[i].C] > minDist[nxtPos.R][nxtPos.C][targetPos[i].R][targetPos[i].C] {
-						optimal = append(optimal, action)
-					}
-				}
-				actions[i] = optimal[planner.RandGen.Intn(len(optimal))]
 			}
+			actions[i] = optimal[planner.RandGen.Intn(len(optimal))]
 		} else {
 			// UCB アルゴリズムに従って行動選択
 			actions[i] = nodes[i].Select(validActions)
 		}
 	}
-	nxtStates, rewards, _ := agentstate.Next(curStates, actions, items, planner.MapData, planner.RandGen)
-	for i := 0; i < config.NumAgents; i++ {
-		if len(subGoals[i]) > 0 && nxtStates[i].Pos == subGoals[i][0] {
+	nxtStates, rewards, _ := agentstate.Next(curStates, actions, items, subGoals, planner.MapData, planner.RandGen)
+	for i, state := range nxtStates {
+		if len(subGoals[i]) > 0 && state.Pos == subGoals[i][0] {
 			subGoals[i] = subGoals[i][1:]
-			rewards[i] += config.SubGoalReward
 		}
 	}
 	cumRewards := planner.update(turn+1, depth+1, nxtStates, items, subGoals, nxtRollout, targetPos)

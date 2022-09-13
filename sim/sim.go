@@ -202,7 +202,7 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 func (sim *Simulator) Next(actions agentaction.Actions) {
 	sim.Turn++
 	sim.LastActions = actions
-	nxtStates, _, newItem := agentstate.Next(sim.States, actions, sim.Items, sim.MapData, sim.SimRandGen)
+	nxtStates, _, newItem := agentstate.Next(sim.States, actions, sim.Items, sim.SubGoals, sim.MapData, sim.SimRandGen)
 	sim.States = nxtStates
 	for i := 0; i < config.NumAgents; i++ {
 		if newItem[i] {
