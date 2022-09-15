@@ -98,7 +98,6 @@ func GetValidActions(state agentstate.State, items map[mapdata.Pos]int, mapData 
 }
 
 type Planner struct {
-	Id       int
 	Nodes    [][]map[agentstate.State]*Node // [id][depth][state]
 	MapData  *mapdata.MapData
 	RandGen  *rand.Rand
@@ -106,10 +105,9 @@ type Planner struct {
 	IterIdx  int
 }
 
-func New(id int, mapData *mapdata.MapData, randGen *rand.Rand, nodePool *sync.Pool) *Planner {
+func New(mapData *mapdata.MapData, randGen *rand.Rand, nodePool *sync.Pool) *Planner {
 	nodes := make([][]map[agentstate.State]*Node, config.NumAgents)
 	return &Planner{
-		Id:       id,
 		Nodes:    nodes,
 		MapData:  mapData,
 		RandGen:  randGen,
@@ -118,8 +116,8 @@ func New(id int, mapData *mapdata.MapData, randGen *rand.Rand, nodePool *sync.Po
 	}
 }
 
-func (planner *Planner) BestAction(curState agentstate.State, items map[mapdata.Pos]int) agentaction.Action {
-	node := planner.Nodes[planner.Id][0][curState]
+func (planner *Planner) BestAction(id int, curState agentstate.State, items map[mapdata.Pos]int) agentaction.Action {
+	node := planner.Nodes[id][0][curState]
 	validActions := GetValidActions(curState, items, planner.MapData)
 	return node.BestAction(validActions)
 }
