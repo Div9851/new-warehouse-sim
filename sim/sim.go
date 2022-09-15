@@ -66,25 +66,25 @@ func GetSubGoals(state agentstate.State, items map[mapdata.Pos]int, reserved map
 }
 
 type Simulator struct {
-	Turn           int
-	States         agentstate.States
-	Items          []map[mapdata.Pos]int
-	Budgets        []float64
-	LastActions    agentaction.Actions
-	ItemsCount     []int
-	PickUpCount    []int
-	ClearCount     []int
-	SubGoals       [][]mapdata.Pos
-	Reserved       map[mapdata.Pos]int
-	MapData        *mapdata.MapData
-	SimRandGen     *rand.Rand
-	PlannerRandGen *rand.Rand
-	Verbose        bool
+	Turn            int
+	States          agentstate.States
+	Items           []map[mapdata.Pos]int
+	Budgets         []float64
+	LastActions     agentaction.Actions
+	ItemsCount      []int
+	PickUpCount     []int
+	ClearCount      []int
+	SubGoals        [][]mapdata.Pos
+	Reserved        map[mapdata.Pos]int
+	MapData         *mapdata.MapData
+	SimRandGen      *rand.Rand
+	PlannerRandGens []*rand.Rand
+	Verbose         bool
 }
 
 func New(mapData *mapdata.MapData, seed int64, verbose bool) *Simulator {
 	simRandGen := rand.New(rand.NewSource(seed))
-	plannerRandGen := rand.New(rand.NewSource(simRandGen.Int63()))
+	plannerRandGens := []*rand.Rand{}
 	states := agentstate.States{}
 	items := []map[mapdata.Pos]int{}
 	budgets := []float64{}
@@ -92,6 +92,7 @@ func New(mapData *mapdata.MapData, seed int64, verbose bool) *Simulator {
 	subGoals := make([][]mapdata.Pos, config.NumAgents)
 	reserved := make(map[mapdata.Pos]int)
 	for i := 0; i < config.NumAgents; i++ {
+		plannerRandGens = append(plannerRandGens, rand.New(rand.NewSource(simRandGen.Int63())))
 		var startPos mapdata.Pos
 		for {
 			startPos = mapData.AllPos[simRandGen.Intn(len(mapData.AllPos))]
@@ -112,19 +113,19 @@ func New(mapData *mapdata.MapData, seed int64, verbose bool) *Simulator {
 	pickUpCount := make([]int, config.NumAgents)
 	clearCount := make([]int, config.NumAgents)
 	return &Simulator{
-		Turn:           0,
-		States:         states,
-		Items:          items,
-		Budgets:        budgets,
-		ItemsCount:     itemsCount,
-		PickUpCount:    pickUpCount,
-		ClearCount:     clearCount,
-		SubGoals:       subGoals,
-		Reserved:       reserved,
-		MapData:        mapData,
-		SimRandGen:     simRandGen,
-		PlannerRandGen: plannerRandGen,
-		Verbose:        verbose,
+		Turn:            0,
+		States:          states,
+		Items:           items,
+		Budgets:         budgets,
+		ItemsCount:      itemsCount,
+		PickUpCount:     pickUpCount,
+		ClearCount:      clearCount,
+		SubGoals:        subGoals,
+		Reserved:        reserved,
+		MapData:         mapData,
+		SimRandGen:      simRandGen,
+		PlannerRandGens: plannerRandGens,
+		Verbose:         verbose,
 	}
 }
 
@@ -142,11 +143,19 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 			break
 		}
 		// プランニングフェーズ
-		planner := mcts.New(sim.MapData, sim.PlannerRandGen, nodePool)
-		for iter := 0; iter < config.NumIters; iter++ {
-			planner.Update(sim.Turn, sim.States, sim.Items, sim.SubGoals)
+		var wg sync.WaitGroup
+		planners := make([]*mcts.Planner, config.NumAgents)
+		for id := 0; id < config.NumAgents; id++ {
+			wg.Add(1)
+			planners[id] = mcts.New(id, sim.MapData, sim.PlannerRandGens[id], nodePool)
+			go func(id int) {
+				for iter := 0; iter < config.NumIters; iter++ {
+					planners[id].Update(sim.Turn, sim.States, sim.Items, sim.SubGoals)
+				}
+				wg.Done()
+			}(id)
 		}
-		actions := planner.BestActions(sim.States, sim.Items)
+		wg.Wait()
 		// 予約フェーズ
 		bids := []Bid{}
 		for id := 0; id < config.NumAgents; id++ {
@@ -156,8 +165,8 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 			}
 			cur := sim.States[id]
 			mctsTurns := math.MaxInt
-			for depth := 0; depth < len(planner.Nodes[id]); depth++ {
-				node := planner.Nodes[id][depth][cur]
+			for depth := 0; depth < len(planners[id].Nodes[id]); depth++ {
+				node := planners[id].Nodes[id][depth][cur]
 				if node == nil {
 					break
 				}
@@ -194,6 +203,11 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 			sim.Budgets[bid.Id] -= bid.Value
 		}
 		// 行動フェーズ
+		actions := make(agentaction.Actions, config.NumAgents)
+		for id := 0; id < config.NumAgents; id++ {
+			actions[id] = planners[id].BestAction(sim.States[id], sim.Items[id])
+			planners[id].Free()
+		}
 		sim.Next(actions)
 	}
 	return sim.ItemsCount, sim.PickUpCount, sim.ClearCount
