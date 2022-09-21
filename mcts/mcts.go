@@ -63,7 +63,7 @@ func (node *Node) Select(actions agentaction.Actions) agentaction.Action {
 	return selected
 }
 
-func (node *Node) BestAction(actions agentaction.Actions) agentaction.Action {
+func (node *Node) GetBestAction(actions agentaction.Actions) agentaction.Action {
 	selected := agentaction.COUNT
 	maxScore := math.Inf(-1)
 	for _, action := range actions {
@@ -85,6 +85,23 @@ func (node *Node) Reset() {
 	node.LastUpdate = 0
 }
 
+type Planner struct {
+	Nodes    [][]map[agentstate.State]*Node // [id][depth][state]
+	MapData  *mapdata.MapData
+	RandGen  *rand.Rand
+	NodePool *sync.Pool
+}
+
+func New(mapData *mapdata.MapData, randGen *rand.Rand, nodePool *sync.Pool) *Planner {
+	nodes := make([][]map[agentstate.State]*Node, config.NumAgents)
+	return &Planner{
+		Nodes:    nodes,
+		MapData:  mapData,
+		RandGen:  randGen,
+		NodePool: nodePool,
+	}
+}
+
 func GetValidActions(state agentstate.State, items map[mapdata.Pos]int, mapData *mapdata.MapData) agentaction.Actions {
 	actions := make(agentaction.Actions, len(mapData.ValidActions[state.Pos.R][state.Pos.C]))
 	copy(actions, mapData.ValidActions[state.Pos.R][state.Pos.C])
@@ -97,37 +114,35 @@ func GetValidActions(state agentstate.State, items map[mapdata.Pos]int, mapData 
 	return actions
 }
 
-type Planner struct {
-	Nodes    [][]map[agentstate.State]*Node // [id][depth][state]
-	MapData  *mapdata.MapData
-	RandGen  *rand.Rand
-	NodePool *sync.Pool
-	IterIdx  int
-}
-
-func New(mapData *mapdata.MapData, randGen *rand.Rand, nodePool *sync.Pool) *Planner {
-	nodes := make([][]map[agentstate.State]*Node, config.NumAgents)
-	return &Planner{
-		Nodes:    nodes,
-		MapData:  mapData,
-		RandGen:  randGen,
-		NodePool: nodePool,
-		IterIdx:  0,
+func (planner *Planner) GetBestRoute(id int, curState agentstate.State, items map[mapdata.Pos]int) []mapdata.Pos {
+	var route []mapdata.Pos
+	for depth := 0; depth < len(planner.Nodes[id]); depth++ {
+		node := planner.Nodes[id][depth][curState]
+		if node == nil {
+			return nil
+		}
+		validActions := GetValidActions(curState, items, planner.MapData)
+		action := node.GetBestAction(validActions)
+		if action == agentaction.PICKUP || action == agentaction.CLEAR {
+			break
+		}
+		nxtPos := planner.MapData.NextPos[curState.Pos.R][curState.Pos.C][action]
+		curState.Pos = nxtPos
+		route = append(route, nxtPos)
 	}
+	return route
 }
 
-func (planner *Planner) BestAction(id int, curState agentstate.State, items map[mapdata.Pos]int) agentaction.Action {
+func (planner *Planner) GetBestAction(id int, curState agentstate.State, items map[mapdata.Pos]int) agentaction.Action {
 	node := planner.Nodes[id][0][curState]
 	validActions := GetValidActions(curState, items, planner.MapData)
-	return node.BestAction(validActions)
+	return node.GetBestAction(validActions)
 }
 
-func (planner *Planner) Update(turn int, curStates agentstate.States, items []map[mapdata.Pos]int, subGoals [][]mapdata.Pos) {
+func (planner *Planner) Update(turn int, curStates agentstate.States, items []map[mapdata.Pos]int, routes [][]mapdata.Pos, iterIdx int) {
 	rollout := make([]bool, config.NumAgents)
 	targetPos := make([]mapdata.Pos, config.NumAgents)
 	itemsCopy := make([]map[mapdata.Pos]int, config.NumAgents)
-	subGoalsCopy := make([][]mapdata.Pos, config.NumAgents)
-	copy(subGoalsCopy, subGoals)
 	for i := 0; i < config.NumAgents; i++ {
 		targetPos[i] = mapdata.NonePos
 		itemsCopy[i] = make(map[mapdata.Pos]int)
@@ -135,11 +150,12 @@ func (planner *Planner) Update(turn int, curStates agentstate.States, items []ma
 			itemsCopy[i][pos] = itemNum
 		}
 	}
-	planner.update(turn, 0, curStates, itemsCopy, subGoalsCopy, rollout, targetPos)
-	planner.IterIdx++
+	routesCopy := make([][]mapdata.Pos, config.NumAgents)
+	copy(routesCopy, routes)
+	planner.update(turn, 0, curStates, itemsCopy, routesCopy, rollout, targetPos, iterIdx)
 }
 
-func (planner *Planner) update(turn int, depth int, curStates agentstate.States, items []map[mapdata.Pos]int, subGoals [][]mapdata.Pos, rollout []bool, targetPos []mapdata.Pos) []float64 {
+func (planner *Planner) update(turn int, depth int, curStates agentstate.States, items []map[mapdata.Pos]int, routes [][]mapdata.Pos, rollout []bool, targetPos []mapdata.Pos, iterIdx int) []float64 {
 	if turn == config.LastTurn || depth == config.MaxDepth {
 		return make([]float64, config.NumAgents)
 	}
@@ -170,21 +186,21 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 			if !state.HasItem && items[i][state.Pos] > 0 {
 				actions[i] = agentaction.PICKUP
 				targetPos[i] = mapdata.NonePos
-				subGoals[i] = nil
+				routes[i] = nil
 				continue
 			}
 			if state.HasItem && state.Pos == planner.MapData.DepotPos {
 				actions[i] = agentaction.CLEAR
 				targetPos[i] = mapdata.NonePos
-				subGoals[i] = nil
+				routes[i] = nil
 				continue
 			}
 			if state.Pos == targetPos[i] {
 				targetPos[i] = mapdata.NonePos
 			}
 			if targetPos[i] == mapdata.NonePos {
-				if len(subGoals[i]) > 0 {
-					targetPos[i] = subGoals[i][0]
+				if len(routes[i]) > 0 {
+					targetPos[i] = routes[i][0]
 				} else if state.HasItem {
 					// アイテムをもっているなら、デポを目的地にする
 					targetPos[i] = planner.MapData.DepotPos
@@ -217,17 +233,17 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 			actions[i] = nodes[i].Select(validActions)
 		}
 	}
-	nxtStates, rewards, _ := agentstate.Next(curStates, actions, items, subGoals, planner.MapData, planner.RandGen)
+	nxtStates, rewards, _ := agentstate.Next(curStates, actions, nxtRollout, items, routes, planner.MapData, planner.RandGen)
 	for i, state := range nxtStates {
-		if len(subGoals[i]) > 0 && state.Pos == subGoals[i][0] {
-			subGoals[i] = subGoals[i][1:]
+		if len(routes[i]) > 0 && state.Pos == routes[i][0] {
+			routes[i] = routes[i][1:]
 		}
 	}
-	cumRewards := planner.update(turn+1, depth+1, nxtStates, items, subGoals, nxtRollout, targetPos)
-	for i := 0; i < config.NumAgents; i++ {
+	cumRewards := planner.update(turn+1, depth+1, nxtStates, items, routes, nxtRollout, targetPos, iterIdx)
+	for i := range curStates {
 		cumRewards[i] = rewards[i] + config.DiscountFactor*cumRewards[i]
 		if !rollout[i] {
-			decay := math.Pow(config.DecayRate, float64(planner.IterIdx-nodes[i].LastUpdate))
+			decay := math.Pow(config.DecayRate, float64(iterIdx-nodes[i].LastUpdate))
 			nodes[i].TotalCnt *= decay
 			for action := range nodes[i].SelectCnt {
 				nodes[i].SelectCnt[action] *= decay
@@ -236,7 +252,7 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 			nodes[i].TotalCnt++
 			nodes[i].SelectCnt[actions[i]]++
 			nodes[i].CumReward[actions[i]] += cumRewards[i]
-			nodes[i].LastUpdate = planner.IterIdx
+			nodes[i].LastUpdate = iterIdx
 		}
 	}
 	return cumRewards

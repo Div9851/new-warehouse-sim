@@ -2,9 +2,7 @@ package sim
 
 import (
 	"fmt"
-	"math"
 	"math/rand"
-	"sort"
 	"sync"
 
 	"github.com/Div9851/new-warehouse-sim/agentaction"
@@ -15,54 +13,8 @@ import (
 )
 
 type Bid struct {
-	Id       int
-	SubGoals []mapdata.Pos
-	Value    float64
-}
-
-func GetSubGoals(state agentstate.State, items map[mapdata.Pos]int, reserved map[mapdata.Pos]int, mapData *mapdata.MapData) ([]mapdata.Pos, int) {
-	que := []mapdata.Pos{state.Pos}
-	visited := make(map[mapdata.Pos]struct{})
-	visited[state.Pos] = struct{}{}
-	prevPos := make(map[mapdata.Pos]mapdata.Pos)
-	last := mapdata.NonePos
-	for len(que) > 0 {
-		cur := que[0]
-		que = que[1:]
-		if (!state.HasItem && items[cur] > 0) || (state.HasItem && cur == mapData.DepotPos) {
-			last = cur
-			break
-		}
-		for _, action := range mapData.ValidActions[cur.R][cur.C] {
-			nxt := mapData.NextPos[cur.R][cur.C][action]
-			if _, exist := visited[nxt]; exist {
-				continue
-			}
-			if _, exist := reserved[nxt]; exist {
-				continue
-			}
-			que = append(que, nxt)
-			visited[nxt] = struct{}{}
-			prevPos[nxt] = cur
-		}
-	}
-	if last == mapdata.NonePos {
-		return nil, math.MaxInt
-	}
-	subGoals := []mapdata.Pos{}
-	cur := last
-	turns := 0
-	for cur != state.Pos {
-		if _, exist := mapData.SubGoals[cur]; exist || cur == last {
-			subGoals = append(subGoals, cur)
-		}
-		cur = prevPos[cur]
-		turns++
-	}
-	for i := 0; i*2 < len(subGoals); i++ {
-		subGoals[i], subGoals[len(subGoals)-i-1] = subGoals[len(subGoals)-i-1], subGoals[i]
-	}
-	return subGoals, turns
+	Id    int
+	Value float64
 }
 
 type Simulator struct {
@@ -74,8 +26,7 @@ type Simulator struct {
 	ItemsCount      []int
 	PickUpCount     []int
 	ClearCount      []int
-	SubGoals        [][]mapdata.Pos
-	Reserved        map[mapdata.Pos]int
+	Routes          [][]mapdata.Pos
 	MapData         *mapdata.MapData
 	SimRandGen      *rand.Rand
 	PlannerRandGens []*rand.Rand
@@ -89,8 +40,7 @@ func New(mapData *mapdata.MapData, seed int64, verbose bool) *Simulator {
 	items := []map[mapdata.Pos]int{}
 	budgets := []float64{}
 	usedPos := make(map[mapdata.Pos]struct{})
-	subGoals := make([][]mapdata.Pos, config.NumAgents)
-	reserved := make(map[mapdata.Pos]int)
+	routes := make([][]mapdata.Pos, config.NumAgents)
 	for i := 0; i < config.NumAgents; i++ {
 		plannerRandGens = append(plannerRandGens, rand.New(rand.NewSource(simRandGen.Int63())))
 		var startPos mapdata.Pos
@@ -120,8 +70,7 @@ func New(mapData *mapdata.MapData, seed int64, verbose bool) *Simulator {
 		ItemsCount:      itemsCount,
 		PickUpCount:     pickUpCount,
 		ClearCount:      clearCount,
-		SubGoals:        subGoals,
-		Reserved:        reserved,
+		Routes:          routes,
 		MapData:         mapData,
 		SimRandGen:      simRandGen,
 		PlannerRandGens: plannerRandGens,
@@ -142,72 +91,23 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 		if sim.Turn == config.LastTurn {
 			break
 		}
-		// プランニングフェーズ
 		var wg sync.WaitGroup
 		planners := make([]*mcts.Planner, config.NumAgents)
+		actions := make(agentaction.Actions, config.NumAgents)
+		// プランニングフェーズ
 		for id := 0; id < config.NumAgents; id++ {
 			wg.Add(1)
 			planners[id] = mcts.New(sim.MapData, sim.PlannerRandGens[id], nodePool)
 			go func(id int) {
 				for iter := 0; iter < config.NumIters; iter++ {
-					planners[id].Update(sim.Turn, sim.States, sim.Items, sim.SubGoals)
+					planners[id].Update(sim.Turn, sim.States, sim.Items, sim.Routes, iter)
 				}
+				actions[id] = planners[id].GetBestAction(id, sim.States[id], sim.Items[id])
+				planners[id].Free()
 				wg.Done()
 			}(id)
 		}
 		wg.Wait()
-		// 予約フェーズ
-		bids := []Bid{}
-		for id := 0; id < config.NumAgents; id++ {
-			// 既に予約している頂点があるなら新たな予約はしない
-			if len(sim.SubGoals[id]) > 0 {
-				continue
-			}
-			cur := sim.States[id]
-			mctsTurns := math.MaxInt
-			for depth := 0; depth < len(planners[id].Nodes[id]); depth++ {
-				node := planners[id].Nodes[id][depth][cur]
-				if node == nil {
-					break
-				}
-				validActions := mcts.GetValidActions(cur, sim.Items[id], sim.MapData)
-				action := node.BestAction(validActions)
-				if action == agentaction.PICKUP || action == agentaction.CLEAR {
-					mctsTurns = depth
-					break
-				}
-				cur.Pos = sim.MapData.NextPos[cur.Pos.R][cur.Pos.C][action]
-			}
-			subGoals, greedyTurns := GetSubGoals(sim.States[id], sim.Items[id], sim.Reserved, sim.MapData)
-			if len(subGoals) == 0 || greedyTurns >= mctsTurns {
-				continue
-			}
-			bids = append(bids, Bid{
-				Id:       id,
-				SubGoals: subGoals,
-				Value:    sim.Budgets[id] * (1 - float64(greedyTurns)/float64(mctsTurns)),
-			})
-		}
-		sort.Slice(bids, func(i, j int) bool { return bids[i].Value > bids[j].Value })
-	L:
-		for _, bid := range bids {
-			for _, subGoal := range bid.SubGoals {
-				if _, exist := sim.Reserved[subGoal]; exist {
-					continue L
-				}
-			}
-			for _, subGoal := range bid.SubGoals {
-				sim.Reserved[subGoal] = bid.Id
-			}
-			sim.SubGoals[bid.Id] = bid.SubGoals
-			sim.Budgets[bid.Id] -= bid.Value
-		}
-		// 行動フェーズ
-		actions := make(agentaction.Actions, config.NumAgents)
-		for id := 0; id < config.NumAgents; id++ {
-			actions[id] = planners[id].BestAction(id, sim.States[id], sim.Items[id])
-			planners[id].Free()
-		}
 		sim.Next(actions)
 	}
 	return sim.ItemsCount, sim.PickUpCount, sim.ClearCount
@@ -216,7 +116,8 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 func (sim *Simulator) Next(actions agentaction.Actions) {
 	sim.Turn++
 	sim.LastActions = actions
-	nxtStates, _, newItem := agentstate.Next(sim.States, actions, sim.Items, sim.SubGoals, sim.MapData, sim.SimRandGen)
+	free := make([]bool, config.NumAgents)
+	nxtStates, _, newItem := agentstate.Next(sim.States, actions, free, sim.Items, sim.Routes, sim.MapData, sim.SimRandGen)
 	sim.States = nxtStates
 	for i := 0; i < config.NumAgents; i++ {
 		if newItem[i] {
@@ -226,21 +127,18 @@ func (sim *Simulator) Next(actions agentaction.Actions) {
 		// PICKUP や CLEAR は可能なときにしか選ばないと仮定
 		if actions[i] == agentaction.PICKUP {
 			sim.PickUpCount[i]++
-			for len(sim.SubGoals[i]) > 0 {
-				delete(sim.Reserved, sim.SubGoals[i][0])
-				sim.SubGoals[i] = sim.SubGoals[i][1:]
+			for len(sim.Routes[i]) > 0 {
+				sim.Routes[i] = sim.Routes[i][1:]
 			}
 		}
 		if actions[i] == agentaction.CLEAR {
 			sim.ClearCount[i]++
-			for len(sim.SubGoals[i]) > 0 {
-				delete(sim.Reserved, sim.SubGoals[i][0])
-				sim.SubGoals[i] = sim.SubGoals[i][1:]
+			for len(sim.Routes[i]) > 0 {
+				sim.Routes[i] = sim.Routes[i][1:]
 			}
 		}
-		if len(sim.SubGoals[i]) > 0 && sim.States[i].Pos == sim.SubGoals[i][0] {
-			delete(sim.Reserved, sim.SubGoals[i][0])
-			sim.SubGoals[i] = sim.SubGoals[i][1:]
+		if len(sim.Routes[i]) > 0 && sim.States[i].Pos == sim.Routes[i][0] {
+			sim.Routes[i] = sim.Routes[i][1:]
 		}
 	}
 }
@@ -266,7 +164,7 @@ func (sim *Simulator) Dump() {
 		}
 		fmt.Printf("pos: %v\n", state.Pos)
 		fmt.Printf("budget: %f\n", sim.Budgets[i])
-		fmt.Printf("sub goals: %v\n", sim.SubGoals[i])
+		fmt.Printf("route: %v\n", sim.Routes[i])
 		fmt.Printf("items count: %d ", sim.ItemsCount[i])
 		fmt.Printf("pickup count: %d ", sim.PickUpCount[i])
 		fmt.Printf("clear count: %d\n", sim.ClearCount[i])

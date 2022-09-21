@@ -15,7 +15,7 @@ type State struct {
 
 type States []State
 
-func Next(states States, actions agentaction.Actions, items []map[mapdata.Pos]int, subGoals [][]mapdata.Pos, mapData *mapdata.MapData, randGen *rand.Rand) (States, []float64, []bool) {
+func Next(states States, actions agentaction.Actions, free []bool, items []map[mapdata.Pos]int, routes [][]mapdata.Pos, mapData *mapdata.MapData, randGen *rand.Rand) (States, []float64, []bool) {
 	var curPos []mapdata.Pos
 	var hasItem []bool
 	for _, state := range states {
@@ -26,12 +26,12 @@ func Next(states States, actions agentaction.Actions, items []map[mapdata.Pos]in
 	nxtStates := make(States, n)
 	rewards := make([]float64, n)
 	newItem := make([]bool, n)
-	nxtPos, collision := NextPos(curPos, actions, mapData)
+	nxtPos, collision := NextPos(curPos, actions, free, mapData)
 	for i := range states {
 		if collision[i] {
 			rewards[i] += config.CollisionPenalty
 		}
-		if len(subGoals[i]) > 0 && nxtPos[i] == subGoals[i][0] {
+		if len(routes[i]) > 0 && nxtPos[i] == routes[i][0] {
 			rewards[i] += config.SubGoalReward
 		}
 		switch actions[i] {
@@ -65,74 +65,27 @@ func Next(states States, actions agentaction.Actions, items []map[mapdata.Pos]in
 	return nxtStates, rewards, newItem
 }
 
-/*
-func NextPosMA(curPos []mapdata.Pos, actions agentaction.Actions, mapData *mapdata.MapData) ([]mapdata.Pos, []bool) {
-	n := len(curPos)
-	var nxtPos []mapdata.Pos
-	posToId := make(map[mapdata.Pos]int)
-	nxtCnt := make(map[mapdata.Pos]int)
-	for i, cur := range curPos {
-		nxt := NextPosSA(cur, actions[i], mapData)
-		nxtPos = append(nxtPos, nxt)
-	}
-	collision := make([]bool, n)
-	for i, cur := range curPos {
-		posToId[cur] = i
-		nxtCnt[nxtPos[i]]++
-	}
-	visited := make([]int, n)
-	var dfs func(int)
-	dfs = func(i int) {
-		visited[i] = 1
-		if nxtCnt[nxtPos[i]] > 1 {
-			collision[i] = true
-			visited[i] = 2
-			return
-		}
-		if nxtPos[i] == curPos[i] {
-			visited[i] = 2
-			return
-		}
-		if _, ok := posToId[nxtPos[i]]; !ok {
-			visited[i] = 2
-			return
-		}
-		j := posToId[nxtPos[i]]
-		if visited[j] == 0 {
-			dfs(j)
-		} else if visited[j] == 1 {
-			collision[i] = true
-			visited[i] = 2
-			return
-		}
-		collision[i] = collision[j]
-		visited[i] = 2
-	}
-	for i := range nxtPos {
-		if visited[i] == 0 {
-			dfs(i)
-		}
-		if collision[i] {
-			nxtPos[i] = curPos[i]
-		}
-	}
-	return nxtPos, collision
-}
-*/
-
-func NextPos(curPos []mapdata.Pos, actions agentaction.Actions, mapData *mapdata.MapData) ([]mapdata.Pos, []bool) {
+func NextPos(curPos []mapdata.Pos, actions agentaction.Actions, free []bool, mapData *mapdata.MapData) ([]mapdata.Pos, []bool) {
 	n := len(curPos)
 	nxtPos := make([]mapdata.Pos, n)
 	for i, cur := range curPos {
-		nxtPos[i] = mapData.NextPos[cur.R][cur.C][actions[i]]
+		if cur == mapdata.NonePos {
+			nxtPos[i] = mapdata.NonePos
+		} else {
+			nxtPos[i] = mapData.NextPos[cur.R][cur.C][actions[i]]
+		}
 	}
 	predId := make([]int, n)
 	collision := make([]bool, n)
 	visited := make([]int, n)
 	for i := 0; i < n; i++ {
+		if free[i] {
+			visited[i] = 2
+			continue
+		}
 		predId[i] = -1
 		for j := 0; j < n; j++ {
-			if i == j {
+			if i == j || free[j] {
 				continue
 			}
 			if nxtPos[i] == curPos[j] {
