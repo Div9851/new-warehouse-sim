@@ -15,7 +15,7 @@ type State struct {
 
 type States []State
 
-func Next(states States, actions agentaction.Actions, free []bool, items []map[mapdata.Pos]int, routes [][]mapdata.Pos, mapData *mapdata.MapData, randGen *rand.Rand) (States, []float64, []bool) {
+func Next(states States, actions agentaction.Actions, free []bool, items []map[mapdata.Pos]int, routes [][]mapdata.Pos, mapData *mapdata.MapData, randGen *rand.Rand, newItemProb float64) (States, []float64, []bool) {
 	var curPos []mapdata.Pos
 	var hasItem []bool
 	for _, state := range states {
@@ -52,7 +52,7 @@ func Next(states States, actions agentaction.Actions, free []bool, items []map[m
 				rewards[i] += config.ClearReward
 			}
 		}
-		if randGen.Float64() < config.NewItemProb {
+		if randGen.Float64() < newItemProb {
 			newItemPos := mapData.AllPos[randGen.Intn(len(mapData.AllPos))]
 			newItem[i] = true
 			items[i][newItemPos]++

@@ -97,7 +97,7 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 		// プランニングフェーズ
 		for id := 0; id < config.NumAgents; id++ {
 			wg.Add(1)
-			planners[id] = mcts.New(sim.MapData, sim.PlannerRandGens[id], nodePool)
+			planners[id] = mcts.New(sim.MapData, sim.PlannerRandGens[id], nodePool, 0)
 			go func(id int) {
 				for iter := 0; iter < config.NumIters; iter++ {
 					planners[id].Update(sim.Turn, sim.States, sim.Items, sim.Routes, iter)
@@ -117,7 +117,7 @@ func (sim *Simulator) Next(actions agentaction.Actions) {
 	sim.Turn++
 	sim.LastActions = actions
 	free := make([]bool, config.NumAgents)
-	nxtStates, _, newItem := agentstate.Next(sim.States, actions, free, sim.Items, sim.Routes, sim.MapData, sim.SimRandGen)
+	nxtStates, _, newItem := agentstate.Next(sim.States, actions, free, sim.Items, sim.Routes, sim.MapData, sim.SimRandGen, config.NewItemProb)
 	sim.States = nxtStates
 	for i := 0; i < config.NumAgents; i++ {
 		if newItem[i] {

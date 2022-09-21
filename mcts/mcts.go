@@ -86,19 +86,21 @@ func (node *Node) Reset() {
 }
 
 type Planner struct {
-	Nodes    [][]map[agentstate.State]*Node // [id][depth][state]
-	MapData  *mapdata.MapData
-	RandGen  *rand.Rand
-	NodePool *sync.Pool
+	Nodes       [][]map[agentstate.State]*Node // [id][depth][state]
+	MapData     *mapdata.MapData
+	RandGen     *rand.Rand
+	NodePool    *sync.Pool
+	NewItemProb float64
 }
 
-func New(mapData *mapdata.MapData, randGen *rand.Rand, nodePool *sync.Pool) *Planner {
+func New(mapData *mapdata.MapData, randGen *rand.Rand, nodePool *sync.Pool, newItemProb float64) *Planner {
 	nodes := make([][]map[agentstate.State]*Node, config.NumAgents)
 	return &Planner{
-		Nodes:    nodes,
-		MapData:  mapData,
-		RandGen:  randGen,
-		NodePool: nodePool,
+		Nodes:       nodes,
+		MapData:     mapData,
+		RandGen:     randGen,
+		NodePool:    nodePool,
+		NewItemProb: newItemProb,
 	}
 }
 
@@ -233,7 +235,7 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 			actions[i] = nodes[i].Select(validActions)
 		}
 	}
-	nxtStates, rewards, _ := agentstate.Next(curStates, actions, nxtRollout, items, routes, planner.MapData, planner.RandGen)
+	nxtStates, rewards, _ := agentstate.Next(curStates, actions, nxtRollout, items, routes, planner.MapData, planner.RandGen, planner.NewItemProb)
 	for i, state := range nxtStates {
 		if len(routes[i]) > 0 && state.Pos == routes[i][0] {
 			routes[i] = routes[i][1:]
