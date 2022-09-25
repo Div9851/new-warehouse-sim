@@ -1,4 +1,4 @@
-package mcts
+package fduct
 
 import (
 	"math"
@@ -116,6 +116,48 @@ func GetValidActions(state agentstate.State, items map[mapdata.Pos]int, mapData 
 	return actions
 }
 
+func Greedy(id int, states agentstate.States, items []map[mapdata.Pos]int, routes [][]mapdata.Pos, targetPos []mapdata.Pos, mapData *mapdata.MapData, randGen *rand.Rand) agentaction.Action {
+	state := states[id]
+	validActions := GetValidActions(state, items[id], mapData)
+	if targetPos[id] == state.Pos {
+		targetPos[id] = mapdata.NonePos
+	}
+	if targetPos[id] == mapdata.NonePos && len(routes[id]) > 0 {
+		targetPos[id] = routes[id][0]
+	}
+	if targetPos[id] == mapdata.NonePos {
+		if state.HasItem {
+			if state.Pos == mapData.DepotPos {
+				return agentaction.CLEAR
+			}
+			targetPos[id] = mapData.DepotPos
+		} else {
+			if items[id][state.Pos] > 0 {
+				return agentaction.PICKUP
+			}
+			d := math.MaxInt
+			for pos, itemNum := range items[id] {
+				if itemNum > 0 && d > mapData.MinDist[state.Pos.R][state.Pos.C][pos.R][pos.C] {
+					d = mapData.MinDist[state.Pos.R][state.Pos.C][pos.R][pos.C]
+					targetPos[id] = pos
+				}
+			}
+			// アイテムのある頂点がない場合、ランダムに行動
+			if targetPos[id] == mapdata.NonePos {
+				return validActions[randGen.Intn(len(validActions))]
+			}
+		}
+	}
+	optimal := agentaction.Actions{}
+	for _, action := range validActions {
+		nxtPos := mapData.NextPos[state.Pos.R][state.Pos.C][action]
+		if mapData.MinDist[state.Pos.R][state.Pos.C][targetPos[id].R][targetPos[id].C] > mapData.MinDist[nxtPos.R][nxtPos.C][targetPos[id].R][targetPos[id].C] {
+			optimal = append(optimal, action)
+		}
+	}
+	return optimal[randGen.Intn(len(optimal))]
+}
+
 func (planner *Planner) GetBestRoute(id int, curState agentstate.State, items map[mapdata.Pos]int) []mapdata.Pos {
 	var route []mapdata.Pos
 	for depth := 0; depth < len(planner.Nodes[id]); depth++ {
@@ -181,57 +223,11 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 				nxtRollout[i] = true
 			}
 		}
-		validActions := GetValidActions(state, items[i], planner.MapData)
-		minDist := planner.MapData.MinDist
 		if nxtRollout[i] {
-			// ロールアウトポリシーに従って行動選択
-			if !state.HasItem && items[i][state.Pos] > 0 {
-				actions[i] = agentaction.PICKUP
-				targetPos[i] = mapdata.NonePos
-				routes[i] = nil
-				continue
-			}
-			if state.HasItem && state.Pos == planner.MapData.DepotPos {
-				actions[i] = agentaction.CLEAR
-				targetPos[i] = mapdata.NonePos
-				routes[i] = nil
-				continue
-			}
-			if state.Pos == targetPos[i] {
-				targetPos[i] = mapdata.NonePos
-			}
-			if targetPos[i] == mapdata.NonePos {
-				if len(routes[i]) > 0 {
-					targetPos[i] = routes[i][0]
-				} else if state.HasItem {
-					// アイテムをもっているなら、デポを目的地にする
-					targetPos[i] = planner.MapData.DepotPos
-				} else {
-					// アイテムをもっていないなら、アイテムのある頂点のうち最も近い頂点を目的地にする
-					d := math.MaxInt
-					for pos, itemNum := range items[i] {
-						if itemNum > 0 && d > minDist[state.Pos.R][state.Pos.C][pos.R][pos.C] {
-							d = minDist[state.Pos.R][state.Pos.C][pos.R][pos.C]
-							targetPos[i] = pos
-						}
-					}
-					// アイテムのある頂点がない場合、ランダムに行動
-					if d == math.MaxInt {
-						actions[i] = validActions[planner.RandGen.Intn(len(validActions))]
-						continue
-					}
-				}
-			}
-			optimal := agentaction.Actions{}
-			for _, action := range validActions {
-				nxtPos := planner.MapData.NextPos[state.Pos.R][state.Pos.C][action]
-				if minDist[state.Pos.R][state.Pos.C][targetPos[i].R][targetPos[i].C] > minDist[nxtPos.R][nxtPos.C][targetPos[i].R][targetPos[i].C] {
-					optimal = append(optimal, action)
-				}
-			}
-			actions[i] = optimal[planner.RandGen.Intn(len(optimal))]
+			actions[i] = Greedy(i, curStates, items, routes, targetPos, planner.MapData, planner.RandGen)
 		} else {
 			// UCB アルゴリズムに従って行動選択
+			validActions := GetValidActions(state, items[i], planner.MapData)
 			actions[i] = nodes[i].Select(validActions)
 		}
 	}
