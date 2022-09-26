@@ -8,8 +8,8 @@ import (
 	"github.com/Div9851/new-warehouse-sim/agentaction"
 	"github.com/Div9851/new-warehouse-sim/agentstate"
 	"github.com/Div9851/new-warehouse-sim/config"
+	"github.com/Div9851/new-warehouse-sim/fduct"
 	"github.com/Div9851/new-warehouse-sim/mapdata"
-	"github.com/Div9851/new-warehouse-sim/uct"
 )
 
 type Bid struct {
@@ -81,7 +81,7 @@ func New(mapData *mapdata.MapData, seed int64, verbose bool) *Simulator {
 func (sim *Simulator) Run() ([]int, []int, []int) {
 	var nodePool = &sync.Pool{
 		New: func() interface{} {
-			return uct.NewNode()
+			return fduct.NewNode()
 		},
 	}
 	for {
@@ -92,16 +92,15 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 			break
 		}
 		var wg sync.WaitGroup
-		planners := make([]*uct.Planner, config.NumAgents)
+		planners := make([]*fduct.Planner, config.NumAgents)
 		actions := make(agentaction.Actions, config.NumAgents)
 		// プランニングフェーズ
 		for id := 0; id < config.NumAgents; id++ {
 			wg.Add(1)
-			// planners[id] = fduct.New(sim.MapData, sim.PlannerRandGens[id], nodePool, 0)
-			planners[id] = uct.New(id, sim.MapData, sim.PlannerRandGens[id], nodePool, 0)
+			planners[id] = fduct.New(sim.MapData, sim.PlannerRandGens[id], nodePool, 0)
 			go func(id int) {
 				for iter := 0; iter < config.NumIters; iter++ {
-					planners[id].Update(sim.Turn, sim.States, sim.Items)
+					planners[id].Update(sim.Turn, sim.States, sim.Items, sim.Routes, iter)
 				}
 				actions[id] = planners[id].GetBestAction(id, sim.States[id], sim.Items[id])
 				planners[id].Free()
