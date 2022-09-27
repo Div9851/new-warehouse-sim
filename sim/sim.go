@@ -14,18 +14,16 @@ import (
 )
 
 type Bid struct {
-	Id     int
-	Route  []mapdata.Pos
-	Action agentaction.Action
-	Value  float64
+	Id    int
+	Route []mapdata.Pos
+	Value float64
 }
 
-func GetRoute(curState agentstate.State, items map[mapdata.Pos]int, banned map[mapdata.Pos]map[mapdata.Pos]struct{}, mapData *mapdata.MapData) ([]mapdata.Pos, agentaction.Action) {
+func GetRoute(curState agentstate.State, items map[mapdata.Pos]int, reserved map[mapdata.Pos]struct{}, mapData *mapdata.MapData) []mapdata.Pos {
 	que := []mapdata.Pos{curState.Pos}
 	vis := make(map[mapdata.Pos]struct{})
 	vis[curState.Pos] = struct{}{}
 	prev := make(map[mapdata.Pos]mapdata.Pos)
-	lastAction := make(map[mapdata.Pos]agentaction.Action)
 	goal := mapdata.NonePos
 	for len(que) > 0 {
 		curPos := que[0]
@@ -44,31 +42,26 @@ func GetRoute(curState agentstate.State, items map[mapdata.Pos]int, banned map[m
 			if _, exist := vis[nxtPos]; exist {
 				continue
 			}
-			if _, exist1 := banned[curPos]; exist1 {
-				if _, exist2 := banned[curPos][nxtPos]; exist2 {
-					continue
-				}
+			if _, exist := reserved[nxtPos]; exist {
+				continue
 			}
 			que = append(que, nxtPos)
 			vis[nxtPos] = struct{}{}
 			prev[nxtPos] = curPos
-			lastAction[nxtPos] = action
 		}
 	}
 	if goal == mapdata.NonePos {
-		return nil, agentaction.COUNT
+		return nil
 	}
 	var route []mapdata.Pos
-	var action agentaction.Action
 	for goal != curState.Pos {
 		route = append(route, goal)
-		action = lastAction[goal]
 		goal = prev[goal]
 	}
 	for i, j := 0, len(route)-1; i < j; i, j = i+1, j-1 {
 		route[i], route[j] = route[j], route[i]
 	}
-	return route, action
+	return route
 }
 
 type Simulator struct {
@@ -165,15 +158,10 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 		}
 		wg.Wait()
 		// 予約フェーズ
-		banned := make(map[mapdata.Pos]map[mapdata.Pos]struct{})
+		reserved := make(map[mapdata.Pos]struct{})
 		for id := 0; id < config.NumAgents; id++ {
-			cur := sim.States[id].Pos
 			for _, pos := range sim.Routes[id] {
-				if _, exist := banned[pos]; !exist {
-					banned[pos] = make(map[mapdata.Pos]struct{})
-				}
-				banned[pos][cur] = struct{}{}
-				cur = pos
+				reserved[pos] = struct{}{}
 			}
 		}
 		var bids []Bid
@@ -181,44 +169,35 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 			if len(sim.Routes[id]) > 0 {
 				continue
 			}
-			route, action := GetRoute(sim.States[id], sim.Items[id], banned, sim.MapData)
+			route := GetRoute(sim.States[id], sim.Items[id], reserved, sim.MapData)
 			if len(route) == 0 {
 				continue
 			}
 			var r float64
 			if len(plannedRoute[id]) > 0 {
-				if len(route) > len(plannedRoute[id]) {
-					continue
-				}
-				r = 1 - float64(len(route))/float64(len(plannedRoute[id]))
+				r = float64(len(route)) / float64(len(plannedRoute[id]))
 			} else {
 				r = 1
 			}
-			bids = append(bids, Bid{Id: id, Route: route, Action: action, Value: sim.Budgets[id] * r})
+			if r <= 1 {
+				bids = append(bids, Bid{Id: id, Route: route, Value: sim.Budgets[id] * r})
+			}
 		}
 		sort.Slice(bids, func(i, j int) bool { return bids[i].Value > bids[j].Value })
 		for _, bid := range bids {
-			cur := sim.States[bid.Id].Pos
 			skip := false
 			for _, pos := range bid.Route {
-				if _, exist1 := banned[cur]; exist1 {
-					if _, exist2 := banned[pos]; exist2 {
-						skip = true
-						break
-					}
+				if _, exist := reserved[pos]; exist {
+					skip = true
+					break
 				}
 			}
 			if skip {
 				continue
 			}
-			cur = sim.States[bid.Id].Pos
 			for _, pos := range bid.Route {
-				if _, exist := banned[pos]; !exist {
-					banned[pos] = make(map[mapdata.Pos]struct{})
-				}
-				banned[pos][cur] = struct{}{}
+				reserved[pos] = struct{}{}
 			}
-			actions[bid.Id] = bid.Action
 			sim.Routes[bid.Id] = bid.Route
 			sim.Budgets[bid.Id] -= bid.Value
 		}

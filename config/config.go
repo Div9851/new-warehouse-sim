@@ -1,7 +1,7 @@
 package config
 
 const (
-	NumAgents        = 5
+	NumAgents        = 3
 	LastTurn         = 100
 	NewItemProb      = 0.1
 	NumIters         = 20000

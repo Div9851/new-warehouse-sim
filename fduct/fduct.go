@@ -171,8 +171,10 @@ func (planner *Planner) GetRoute(id int, curState agentstate.State, items map[ma
 			break
 		}
 		nxtPos := planner.MapData.NextPos[curState.Pos.R][curState.Pos.C][action]
-		curState.Pos = nxtPos
-		route = append(route, nxtPos)
+		if nxtPos != curState.Pos {
+			curState.Pos = nxtPos
+			route = append(route, nxtPos)
+		}
 	}
 	return route
 }
