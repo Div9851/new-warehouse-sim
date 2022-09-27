@@ -158,7 +158,7 @@ func Greedy(id int, states agentstate.States, items []map[mapdata.Pos]int, route
 	return optimal[randGen.Intn(len(optimal))]
 }
 
-func (planner *Planner) GetBestRoute(id int, curState agentstate.State, items map[mapdata.Pos]int) []mapdata.Pos {
+func (planner *Planner) GetRoute(id int, curState agentstate.State, items map[mapdata.Pos]int) []mapdata.Pos {
 	var route []mapdata.Pos
 	for depth := 0; depth < len(planner.Nodes[id]); depth++ {
 		node := planner.Nodes[id][depth][curState]
