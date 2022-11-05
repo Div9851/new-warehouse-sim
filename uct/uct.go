@@ -197,8 +197,7 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 	}
 	free := make([]bool, config.NumAgents)
 	free[planner.Id] = nxtRollout
-	routes := make([][]mapdata.Pos, config.NumAgents)
-	nxtStates, rewards, _ := agentstate.Next(curStates, actions, free, items, routes, planner.MapData, planner.RandGen, planner.NewItemProb)
+	nxtStates, rewards, _ := agentstate.Next(curStates, actions, free, items, planner.MapData, planner.RandGen, planner.NewItemProb)
 	cumReward := planner.update(turn+1, depth+1, nxtStates, items, nxtRollout, targetPos)
 	cumReward = rewards[planner.Id] + config.DiscountFactor*cumReward
 	if !rollout {
