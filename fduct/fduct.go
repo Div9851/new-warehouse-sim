@@ -149,7 +149,7 @@ func (planner *Planner) GetBestAction(id int, curState agentstate.State, items m
 	return node.GetBestAction(validActions)
 }
 
-func (planner *Planner) Update(turn int, curStates agentstate.States, items []map[mapdata.Pos]int, priority []float64, iterIdx int) {
+func (planner *Planner) Update(turn int, curStates agentstate.States, items []map[mapdata.Pos]int, iterIdx int) {
 	rollout := make([]bool, config.NumAgents)
 	targetPos := make([]mapdata.Pos, config.NumAgents)
 	itemsCopy := make([]map[mapdata.Pos]int, config.NumAgents)
@@ -160,10 +160,10 @@ func (planner *Planner) Update(turn int, curStates agentstate.States, items []ma
 			itemsCopy[i][pos] = itemNum
 		}
 	}
-	planner.update(turn, 0, curStates, itemsCopy, priority, rollout, targetPos, iterIdx)
+	planner.update(turn, 0, curStates, itemsCopy, rollout, targetPos, iterIdx)
 }
 
-func (planner *Planner) update(turn int, depth int, curStates agentstate.States, items []map[mapdata.Pos]int, priority []float64, rollout []bool, targetPos []mapdata.Pos, iterIdx int) []float64 {
+func (planner *Planner) update(turn int, depth int, curStates agentstate.States, items []map[mapdata.Pos]int, rollout []bool, targetPos []mapdata.Pos, iterIdx int) []float64 {
 	if turn == config.LastTurn || depth == config.MaxDepth {
 		return make([]float64, config.NumAgents)
 	}
@@ -195,11 +195,8 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 			actions[i] = nodes[i].Select(validActions)
 		}
 	}
-	nxtStates, rewards, _ := agentstate.Next(curStates, actions, nxtRollout, items, priority, planner.MapData, planner.RandGen, planner.NewItemProb)
-	if (turn+1)%config.BiddingInterval == 0 {
-		priority = make([]float64, config.NumAgents)
-	}
-	cumRewards := planner.update(turn+1, depth+1, nxtStates, items, priority, nxtRollout, targetPos, iterIdx)
+	nxtStates, rewards, _ := agentstate.Next(curStates, actions, nxtRollout, items, planner.MapData, planner.RandGen, planner.NewItemProb)
+	cumRewards := planner.update(turn+1, depth+1, nxtStates, items, nxtRollout, targetPos, iterIdx)
 	for i := range curStates {
 		cumRewards[i] = rewards[i] + config.DiscountFactor*cumRewards[i]
 		if !rollout[i] {
