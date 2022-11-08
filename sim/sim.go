@@ -101,88 +101,90 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 		if sim.Turn == config.LastTurn {
 			break
 		}
-		// 依頼フェーズ
-		requests := []Request{}
-		for id := 0; id < config.NumAgents; id++ {
-			agentPos := sim.States[id].Pos
-			farthestPos := mapdata.NonePos
-			maxDist := -1
-			for pos := range sim.Items[id] {
-				// 人から引き受けた依頼を再依頼はしない
-				if pos == sim.AcceptedRequest[id].Pos {
+		if config.EnableCooperation {
+			// 依頼フェーズ
+			requests := []Request{}
+			for id := 0; id < config.NumAgents; id++ {
+				agentPos := sim.States[id].Pos
+				farthestPos := mapdata.NonePos
+				maxDist := -1
+				for pos := range sim.Items[id] {
+					// 人から引き受けた依頼を再依頼はしない
+					if pos == sim.AcceptedRequest[id].Pos {
+						continue
+					}
+					dist := sim.MapData.MinDist[agentPos.R][agentPos.C][pos.R][pos.C]
+					if maxDist < dist {
+						maxDist = dist
+						farthestPos = pos
+					}
+				}
+				if farthestPos == mapdata.NonePos {
 					continue
 				}
-				dist := sim.MapData.MinDist[agentPos.R][agentPos.C][pos.R][pos.C]
-				if maxDist < dist {
-					maxDist = dist
-					farthestPos = pos
-				}
+				requests = append(requests, Request{
+					From: id,
+					Pos:  farthestPos,
+				})
 			}
-			if farthestPos == mapdata.NonePos {
-				continue
-			}
-			requests = append(requests, Request{
-				From: id,
-				Pos:  farthestPos,
-			})
-		}
-		// 引き受けフェーズ
-		acceptedId := make([][]int, len(requests))
-		for id := 0; id < config.NumAgents; id++ {
-			if sim.States[id].HasItem || len(sim.Items[id]) > 0 {
-				continue
-			}
-			agentPos := sim.States[id].Pos
-			bestReqId := -1
-			for reqId, req := range requests {
-				if req.From == id {
+			// 引き受けフェーズ
+			acceptedId := make([][]int, len(requests))
+			for id := 0; id < config.NumAgents; id++ {
+				if sim.States[id].HasItem || len(sim.Items[id]) > 0 {
 					continue
 				}
-				if bestReqId == -1 {
-					bestReqId = reqId
-					continue
-				}
-				bestReq := requests[bestReqId]
-				if sim.Balance[id][bestReq.From] != sim.Balance[id][req.From] {
-					if sim.Balance[id][bestReq.From] < sim.Balance[id][req.From] {
+				agentPos := sim.States[id].Pos
+				bestReqId := -1
+				for reqId, req := range requests {
+					if req.From == id {
+						continue
+					}
+					if bestReqId == -1 {
+						bestReqId = reqId
+						continue
+					}
+					bestReq := requests[bestReqId]
+					if sim.Balance[id][bestReq.From] != sim.Balance[id][req.From] {
+						if sim.Balance[id][bestReq.From] < sim.Balance[id][req.From] {
+							bestReqId = reqId
+						}
+						continue
+					}
+					if sim.MapData.MinDist[agentPos.R][agentPos.C][bestReq.Pos.R][bestReq.Pos.C] > sim.MapData.MinDist[agentPos.R][agentPos.C][req.Pos.R][req.Pos.C] {
 						bestReqId = reqId
 					}
+				}
+				if bestReqId == -1 {
 					continue
 				}
-				if sim.MapData.MinDist[agentPos.R][agentPos.C][bestReq.Pos.R][bestReq.Pos.C] > sim.MapData.MinDist[agentPos.R][agentPos.C][req.Pos.R][req.Pos.C] {
-					bestReqId = reqId
+				acceptedId[bestReqId] = append(acceptedId[bestReqId], id)
+			}
+			// 依頼先決定フェーズ
+			for reqId, req := range requests {
+				bestId := -1
+				for _, id := range acceptedId[reqId] {
+					if bestId == -1 {
+						bestId = id
+						continue
+					}
+					bestPos := sim.States[bestId].Pos
+					agentPos := sim.States[id].Pos
+					if sim.MapData.MinDist[req.Pos.R][req.Pos.C][bestPos.R][bestPos.C] > sim.MapData.MinDist[req.Pos.R][req.Pos.C][agentPos.R][agentPos.C] {
+						bestId = id
+					}
 				}
-			}
-			if bestReqId == -1 {
-				continue
-			}
-			acceptedId[bestReqId] = append(acceptedId[bestReqId], id)
-		}
-		// 依頼先決定フェーズ
-		for reqId, req := range requests {
-			bestId := -1
-			for _, id := range acceptedId[reqId] {
 				if bestId == -1 {
-					bestId = id
 					continue
 				}
-				bestPos := sim.States[bestId].Pos
-				agentPos := sim.States[id].Pos
-				if sim.MapData.MinDist[req.Pos.R][req.Pos.C][bestPos.R][bestPos.C] > sim.MapData.MinDist[req.Pos.R][req.Pos.C][agentPos.R][agentPos.C] {
-					bestId = id
+				sim.Items[req.From][req.Pos]--
+				if sim.Items[req.From][req.Pos] == 0 {
+					delete(sim.Items[req.From], req.Pos)
 				}
+				sim.Items[bestId][req.Pos]++
+				sim.Balance[req.From][bestId]++
+				sim.Balance[bestId][req.From]--
+				sim.AcceptedRequest[bestId] = req
 			}
-			if bestId == -1 {
-				continue
-			}
-			sim.Items[req.From][req.Pos]--
-			if sim.Items[req.From][req.Pos] == 0 {
-				delete(sim.Items[req.From], req.Pos)
-			}
-			sim.Items[bestId][req.Pos]++
-			sim.Balance[req.From][bestId]++
-			sim.Balance[bestId][req.From]--
-			sim.AcceptedRequest[bestId] = req
 		}
 		// プランニングフェーズ
 		planners := make([]*fduct.Planner, config.NumAgents)
