@@ -2,6 +2,7 @@ package sim
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"sync"
 
@@ -102,29 +103,29 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 			break
 		}
 		if config.EnableCooperation {
+			depotPos := sim.MapData.DepotPos
+			minDist := sim.MapData.MinDist
 			// 依頼フェーズ
 			requests := []Request{}
 			for id := 0; id < config.NumAgents; id++ {
-				agentPos := sim.States[id].Pos
-				farthestPos := mapdata.NonePos
-				maxDist := -1
+				nearestPos := mapdata.NonePos
+				mi := math.MaxInt
 				for pos := range sim.Items[id] {
 					// 人から引き受けた依頼を再依頼はしない
 					if pos == sim.AcceptedRequest[id].Pos {
 						continue
 					}
-					dist := sim.MapData.MinDist[agentPos.R][agentPos.C][pos.R][pos.C]
-					if maxDist < dist {
-						maxDist = dist
-						farthestPos = pos
+					if mi > minDist[depotPos.R][depotPos.C][pos.R][pos.C] {
+						mi = minDist[depotPos.R][depotPos.C][pos.R][pos.C]
+						nearestPos = pos
 					}
 				}
-				if farthestPos == mapdata.NonePos {
+				if nearestPos == mapdata.NonePos {
 					continue
 				}
 				requests = append(requests, Request{
 					From: id,
-					Pos:  farthestPos,
+					Pos:  nearestPos,
 				})
 			}
 			// 引き受けフェーズ
@@ -133,25 +134,30 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 				if sim.States[id].HasItem || len(sim.Items[id]) > 0 {
 					continue
 				}
-				agentPos := sim.States[id].Pos
+				curPos := sim.States[id].Pos
 				bestReqId := -1
+				bestDist := math.MaxInt
 				for reqId, req := range requests {
 					if req.From == id {
 						continue
 					}
+					dist := minDist[curPos.R][curPos.C][req.Pos.R][req.Pos.C]
 					if bestReqId == -1 {
 						bestReqId = reqId
+						bestDist = dist
 						continue
 					}
 					bestReq := requests[bestReqId]
 					if sim.Balance[id][bestReq.From] != sim.Balance[id][req.From] {
 						if sim.Balance[id][bestReq.From] < sim.Balance[id][req.From] {
 							bestReqId = reqId
+							bestDist = dist
 						}
 						continue
 					}
-					if sim.MapData.MinDist[agentPos.R][agentPos.C][bestReq.Pos.R][bestReq.Pos.C] > sim.MapData.MinDist[agentPos.R][agentPos.C][req.Pos.R][req.Pos.C] {
+					if bestDist > dist {
 						bestReqId = reqId
+						bestDist = dist
 					}
 				}
 				if bestReqId == -1 {
@@ -168,8 +174,8 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 						continue
 					}
 					bestPos := sim.States[bestId].Pos
-					agentPos := sim.States[id].Pos
-					if sim.MapData.MinDist[req.Pos.R][req.Pos.C][bestPos.R][bestPos.C] > sim.MapData.MinDist[req.Pos.R][req.Pos.C][agentPos.R][agentPos.C] {
+					curPos := sim.States[id].Pos
+					if minDist[req.Pos.R][req.Pos.C][bestPos.R][bestPos.C] > minDist[req.Pos.R][req.Pos.C][curPos.R][curPos.C] {
 						bestId = id
 					}
 				}

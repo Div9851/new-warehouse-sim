@@ -12,6 +12,6 @@ const (
 	Penalty           = -5
 	DiscountFactor    = 0.9
 	DecayRate         = 0.999
-	EnableCooperation = false
+	EnableCooperation = true
 	RandSeed          = 123
 )
