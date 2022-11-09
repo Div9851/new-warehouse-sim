@@ -131,7 +131,7 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 			// 引き受けフェーズ
 			acceptedId := make([][]int, len(requests))
 			for id := 0; id < config.NumAgents; id++ {
-				if sim.States[id].HasItem || len(sim.Items[id]) > 0 {
+				if sim.AcceptedRequest[id] != dummyRequest {
 					continue
 				}
 				curPos := sim.States[id].Pos
@@ -161,6 +161,14 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 					}
 				}
 				if bestReqId == -1 {
+					continue
+				}
+				bestReq := requests[bestReqId]
+				if sim.Balance[id][bestReq.From] > 0 {
+					acceptedId[bestReqId] = append(acceptedId[bestReqId], id)
+					continue
+				}
+				if sim.States[id].HasItem || len(sim.Items[id]) > 0 {
 					continue
 				}
 				acceptedId[bestReqId] = append(acceptedId[bestReqId], id)
