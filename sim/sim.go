@@ -2,7 +2,6 @@ package sim
 
 import (
 	"fmt"
-	"math"
 	"math/rand"
 	"sync"
 
@@ -30,7 +29,6 @@ type Simulator struct {
 	LastActions     agentaction.Actions
 	PickedAt        []mapdata.Pos
 	AcceptedRequest []Request
-	Balance         [][]int
 	ItemsCount      []int
 	PickUpCount     []int
 	ClearCount      []int
@@ -47,7 +45,6 @@ func New(mapData *mapdata.MapData, seed int64, verbose bool) *Simulator {
 	items := []map[mapdata.Pos]int{}
 	pickedAt := []mapdata.Pos{}
 	acceptedRequest := []Request{}
-	balance := make([][]int, config.NumAgents)
 	usedPos := make(map[mapdata.Pos]struct{})
 	for i := 0; i < config.NumAgents; i++ {
 		plannerRandGens = append(plannerRandGens, rand.New(rand.NewSource(simRandGen.Int63())))
@@ -67,7 +64,6 @@ func New(mapData *mapdata.MapData, seed int64, verbose bool) *Simulator {
 		items = append(items, make(map[mapdata.Pos]int))
 		pickedAt = append(pickedAt, mapdata.NonePos)
 		acceptedRequest = append(acceptedRequest, dummyRequest)
-		balance[i] = make([]int, config.NumAgents)
 	}
 	itemsCount := make([]int, config.NumAgents)
 	pickUpCount := make([]int, config.NumAgents)
@@ -78,7 +74,6 @@ func New(mapData *mapdata.MapData, seed int64, verbose bool) *Simulator {
 		Items:           items,
 		PickedAt:        pickedAt,
 		AcceptedRequest: acceptedRequest,
-		Balance:         balance,
 		ItemsCount:      itemsCount,
 		PickUpCount:     pickUpCount,
 		ClearCount:      clearCount,
@@ -105,99 +100,101 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 		if config.EnableCooperation {
 			depotPos := sim.MapData.DepotPos
 			minDist := sim.MapData.MinDist
+			load := make([]int, config.NumAgents)
+			avgLoad := 0.0
+			for id := 0; id < config.NumAgents; id++ {
+				for pos, cnt := range sim.Items[id] {
+					load[id] += minDist[depotPos.R][depotPos.C][pos.R][pos.C] * cnt
+				}
+				if sim.States[id].HasItem {
+					pos := sim.States[id].Pos
+					load[id] += minDist[depotPos.R][depotPos.C][pos.R][pos.C]
+				}
+				avgLoad += float64(load[id])
+			}
+			avgLoad /= float64(config.NumAgents)
 			// 依頼フェーズ
 			requests := []Request{}
 			for id := 0; id < config.NumAgents; id++ {
-				nearestPos := mapdata.NonePos
-				mi := math.MaxInt
+				// 負荷が平均以下なら依頼しない
+				if float64(load[id]) <= avgLoad {
+					continue
+				}
+				diff := float64(load[id]) - avgLoad
+				reqPos := mapdata.NonePos
+				ma := -1
 				for pos := range sim.Items[id] {
 					// 人から引き受けた依頼を再依頼はしない
 					if pos == sim.AcceptedRequest[id].Pos {
 						continue
 					}
-					if mi > minDist[depotPos.R][depotPos.C][pos.R][pos.C] {
-						mi = minDist[depotPos.R][depotPos.C][pos.R][pos.C]
-						nearestPos = pos
+					d := minDist[depotPos.R][depotPos.C][pos.R][pos.C]
+					if float64(d) > diff {
+						continue
+					}
+					if ma < d {
+						ma = d
+						reqPos = pos
 					}
 				}
-				if nearestPos == mapdata.NonePos {
+				if reqPos == mapdata.NonePos {
 					continue
 				}
 				requests = append(requests, Request{
 					From: id,
-					Pos:  nearestPos,
+					Pos:  reqPos,
 				})
 			}
 			// 引き受けフェーズ
 			acceptedId := make([][]int, len(requests))
 			for id := 0; id < config.NumAgents; id++ {
+				// 既に別の依頼を引き受けているなら引き受けない
 				if sim.AcceptedRequest[id] != dummyRequest {
 					continue
 				}
+				// 負荷が平均以上なら引き受けない
+				if float64(load[id]) >= avgLoad {
+					continue
+				}
+				diff := avgLoad - float64(load[id])
 				curPos := sim.States[id].Pos
-				bestReqId := -1
-				bestDist := math.MaxInt
+				chosenId := -1
+				ma := -1
 				for reqId, req := range requests {
-					if req.From == id {
+					d := minDist[curPos.R][curPos.C][req.Pos.R][req.Pos.C]
+					if float64(d) > diff {
 						continue
 					}
-					dist := minDist[curPos.R][curPos.C][req.Pos.R][req.Pos.C]
-					if bestReqId == -1 {
-						bestReqId = reqId
-						bestDist = dist
-						continue
-					}
-					bestReq := requests[bestReqId]
-					if sim.Balance[id][bestReq.From] != sim.Balance[id][req.From] {
-						if sim.Balance[id][bestReq.From] < sim.Balance[id][req.From] {
-							bestReqId = reqId
-							bestDist = dist
-						}
-						continue
-					}
-					if bestDist > dist {
-						bestReqId = reqId
-						bestDist = dist
+					if ma < d {
+						ma = d
+						chosenId = reqId
 					}
 				}
-				if bestReqId == -1 {
+				if chosenId == -1 {
 					continue
 				}
-				bestReq := requests[bestReqId]
-				if sim.Balance[id][bestReq.From] > 0 {
-					acceptedId[bestReqId] = append(acceptedId[bestReqId], id)
-					continue
-				}
-				if sim.States[id].HasItem || len(sim.Items[id]) > 0 {
-					continue
-				}
-				acceptedId[bestReqId] = append(acceptedId[bestReqId], id)
+				acceptedId[chosenId] = append(acceptedId[chosenId], id)
 			}
 			// 依頼先決定フェーズ
 			for reqId, req := range requests {
-				bestId := -1
+				chosenId := -1
+				ma := -1.0
 				for _, id := range acceptedId[reqId] {
-					if bestId == -1 {
-						bestId = id
-						continue
-					}
-					bestPos := sim.States[bestId].Pos
-					curPos := sim.States[id].Pos
-					if minDist[req.Pos.R][req.Pos.C][bestPos.R][bestPos.C] > minDist[req.Pos.R][req.Pos.C][curPos.R][curPos.C] {
-						bestId = id
+					diff := avgLoad - float64(load[id])
+					if ma < diff {
+						ma = diff
+						chosenId = id
 					}
 				}
-				if bestId == -1 {
+				if chosenId == -1 {
 					continue
 				}
 				sim.Items[req.From][req.Pos]--
 				if sim.Items[req.From][req.Pos] == 0 {
 					delete(sim.Items[req.From], req.Pos)
 				}
-				sim.Items[bestId][req.Pos]++
-				sim.Balance[req.From][bestId]++
-				sim.Balance[bestId][req.From]--
-				sim.AcceptedRequest[bestId] = req
+				sim.Items[chosenId][req.Pos]++
+				sim.AcceptedRequest[chosenId] = req
 			}
 		}
 		// プランニングフェーズ
