@@ -162,10 +162,11 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 				chosenId := -1
 				mi := math.MaxInt
 				for reqId, req := range requests {
-					d := minDist[pos.R][pos.C][req.Pos.R][req.Pos.C]
+					d := minDist[depotPos.R][depotPos.C][req.Pos.R][req.Pos.C]
 					if float64(d) > diff {
 						continue
 					}
+					d = minDist[pos.R][pos.C][req.Pos.R][req.Pos.C]
 					if mi > d {
 						mi = d
 						chosenId = reqId
