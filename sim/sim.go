@@ -2,6 +2,7 @@ package sim
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"sync"
 
@@ -122,18 +123,18 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 				}
 				diff := float64(load[id]) - avgLoad
 				reqPos := mapdata.NonePos
-				ma := -1
+				mi := math.MaxInt
 				for pos := range sim.Items[id] {
 					// 人から引き受けた依頼を再依頼はしない
 					if pos == sim.AcceptedRequest[id].Pos {
 						continue
 					}
-					d := minDist[depotPos.R][depotPos.C][pos.R][pos.C]
+					d := minDist[pos.R][pos.C][depotPos.R][depotPos.C]
 					if float64(d) > diff {
 						continue
 					}
-					if ma < d {
-						ma = d
+					if mi > d {
+						mi = d
 						reqPos = pos
 					}
 				}
@@ -157,16 +158,16 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 					continue
 				}
 				diff := avgLoad - float64(load[id])
-				curPos := sim.States[id].Pos
+				pos := sim.States[id].Pos
 				chosenId := -1
-				ma := -1
+				mi := math.MaxInt
 				for reqId, req := range requests {
-					d := minDist[curPos.R][curPos.C][req.Pos.R][req.Pos.C]
+					d := minDist[pos.R][pos.C][req.Pos.R][req.Pos.C]
 					if float64(d) > diff {
 						continue
 					}
-					if ma < d {
-						ma = d
+					if mi > d {
+						mi = d
 						chosenId = reqId
 					}
 				}
@@ -178,11 +179,12 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 			// 依頼先決定フェーズ
 			for reqId, req := range requests {
 				chosenId := -1
-				ma := -1.0
+				mi := math.MaxInt
 				for _, id := range acceptedId[reqId] {
-					diff := avgLoad - float64(load[id])
-					if ma < diff {
-						ma = diff
+					pos := sim.States[id].Pos
+					d := minDist[pos.R][pos.C][req.Pos.R][req.Pos.C]
+					if mi > d {
+						mi = d
 						chosenId = id
 					}
 				}
