@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
+	"os"
 	"sync"
 
 	"github.com/Div9851/new-warehouse-sim/config"
@@ -10,7 +14,7 @@ import (
 	"github.com/Div9851/new-warehouse-sim/sim"
 )
 
-func calc(s []float64) (float64, float64) {
+func calcAvgVar(s []float64) (float64, float64) {
 	n := len(s)
 	var (
 		average  float64
@@ -26,36 +30,76 @@ func calc(s []float64) (float64, float64) {
 	return average, variance
 }
 
+func loadMapData(path string) (*mapdata.MapData, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("can't open `%s` (%s)", path, err)
+	}
+	defer f.Close()
+
+	lines := []string{}
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if scanner.Err() != nil {
+		return nil, fmt.Errorf("can't read `%s` (%s)", path, scanner.Err())
+	}
+	return mapdata.New(lines), nil
+}
+
+func loadConfig(path string) (*config.Config, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("can't open `%s` (%s)", path, err)
+	}
+	defer f.Close()
+
+	b, err := ioutil.ReadAll(f)
+	if err != nil {
+		return nil, fmt.Errorf("can't read `%s` (%s)", path, err)
+	}
+
+	var config config.Config
+	err = json.Unmarshal(b, &config)
+	if err != nil {
+		return nil, fmt.Errorf("can't decode `%s` (%s)", path, err)
+	}
+	return &config, nil
+}
+
 func main() {
 	var (
-		numRun  = flag.Int("numrun", 1, "number of runs")
-		verbose = flag.Bool("verbose", false, "show all logs")
+		Run         = flag.Int("run", 1, "number of runs")
+		mapDataFile = flag.String("mapdata-file", "", "path of mapdata file")
+		configFile  = flag.String("config-file", "", "path of config file")
+		verbose     = flag.Bool("verbose", false, "verbosity")
 	)
+
 	flag.Parse()
-	text := []string{
-		"...#...",
-		".#.#.#.",
-		".#.#.#.",
-		"D......",
-		".##.##.",
-		".##.##.",
-		".##.##.",
+
+	mapData, err := loadMapData(*mapDataFile)
+	if err != nil {
+		panic(err)
 	}
-	mapData := mapdata.New(text)
+	config, err := loadConfig(*configFile)
+	if err != nil {
+		panic(err)
+	}
 	itemsCountHistory := make([][]float64, config.NumAgents)
 	clearCountHistory := make([][]float64, config.NumAgents)
 	clearRateHistory := make([][]float64, config.NumAgents)
 	for i := 0; i < config.NumAgents; i++ {
-		itemsCountHistory[i] = make([]float64, *numRun)
-		clearCountHistory[i] = make([]float64, *numRun)
-		clearRateHistory[i] = make([]float64, *numRun)
+		itemsCountHistory[i] = make([]float64, *Run)
+		clearCountHistory[i] = make([]float64, *Run)
+		clearRateHistory[i] = make([]float64, *Run)
 	}
 	var wg sync.WaitGroup
-	for run := 0; run < *numRun; run++ {
+	for run := 0; run < *Run; run++ {
 		wg.Add(1)
 		go func(run int) {
 			fmt.Printf("--- run %d start ---\n", run)
-			sim := sim.New(mapData, config.RandSeed+int64(run), *verbose)
+			sim := sim.New(mapData, config, *verbose, config.RandSeed+int64(run))
 			itemsCount, _, clearCount := sim.Run()
 			for i := 0; i < config.NumAgents; i++ {
 				r := float64(clearCount[i]) / float64(itemsCount[i])
@@ -70,17 +114,17 @@ func main() {
 	wg.Wait()
 	fmt.Println("--items count--")
 	for i := 0; i < config.NumAgents; i++ {
-		average, variance := calc(itemsCountHistory[i])
+		average, variance := calcAvgVar(itemsCountHistory[i])
 		fmt.Printf("AGENT %d: avg. %f var. %f\n", i, average, variance)
 	}
 	fmt.Println("--clear count--")
 	for i := 0; i < config.NumAgents; i++ {
-		average, variance := calc(clearCountHistory[i])
+		average, variance := calcAvgVar(clearCountHistory[i])
 		fmt.Printf("AGENT %d: avg. %f var. %f\n", i, average, variance)
 	}
 	fmt.Println("--clear rate--")
 	for i := 0; i < config.NumAgents; i++ {
-		average, variance := calc(clearRateHistory[i])
+		average, variance := calcAvgVar(clearRateHistory[i])
 		fmt.Printf("AGENT %d: avg. %f var. %f\n", i, average, variance)
 	}
 }

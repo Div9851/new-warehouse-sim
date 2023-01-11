@@ -1,17 +1,17 @@
 package config
 
-const (
-	NumAgents         = 3
-	LastTurn          = 100
-	NewItemProb       = 0.1
-	NumIters          = 20000
-	MaxDepth          = 40
-	ExpandThresh      = 1
-	PickupReward      = 100
-	ClearReward       = 100
-	Penalty           = -5
-	DiscountFactor    = 0.9
-	DecayRate         = 0.999
-	EnableCooperation = true
-	RandSeed          = 123
-)
+type Config struct {
+	NumAgents      int     `json:"numAgents"`
+	LastTurn       int     `json:"lastTurn"`
+	NewItemProb    float64 `json:"newItemProb"`
+	NumIters       int     `json:"numIters"`
+	MaxDepth       int     `json:"maxDepth"`
+	ExpandThresh   int     `json:"expandThresh"`
+	PickupReward   float64 `json:"pickupReward"`
+	ClearReward    float64 `json:"clearReward"`
+	Penalty        float64 `json:"penalty"`
+	DiscountFactor float64 `json:"discountFactor"`
+	DecayRate      float64 `json:"decayRate"`
+	RandSeed       int64   `json:"randSeed"`
+	EnableRequest  bool    `json:"enableRequest"`
+}
