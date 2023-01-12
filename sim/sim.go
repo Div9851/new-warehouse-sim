@@ -91,10 +91,6 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 		if sim.Turn == sim.Config.LastTurn {
 			break
 		}
-		for id := 0; id < sim.Config.NumAgents; id++ {
-
-		}
-
 		// プランニングフェーズ
 		planners := make([]*fduct.Planner, sim.Config.NumAgents)
 		actions := make(agentaction.Actions, sim.Config.NumAgents)
