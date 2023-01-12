@@ -16,7 +16,6 @@ type Node struct {
 	SelectCnt  []float64
 	TotalCnt   float64
 	RolloutCnt int
-	LastUpdate int
 }
 
 func NewNode() *Node {
@@ -25,7 +24,6 @@ func NewNode() *Node {
 		SelectCnt:  make([]float64, agentaction.COUNT),
 		TotalCnt:   0,
 		RolloutCnt: 0,
-		LastUpdate: 0,
 	}
 }
 
@@ -70,7 +68,6 @@ func (node *Node) Reset() {
 	}
 	node.TotalCnt = 0
 	node.RolloutCnt = 0
-	node.LastUpdate = 0
 }
 
 type Planner struct {
@@ -202,16 +199,9 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 	for i := range curStates {
 		cumRewards[i] = rewards[i] + planner.Config.DiscountFactor*cumRewards[i]
 		if !rollout[i] {
-			decay := math.Pow(planner.Config.DecayRate, float64(iterIdx-nodes[i].LastUpdate))
-			nodes[i].TotalCnt *= decay
-			for action := range nodes[i].SelectCnt {
-				nodes[i].SelectCnt[action] *= decay
-				nodes[i].CumReward[action] *= decay
-			}
 			nodes[i].TotalCnt++
 			nodes[i].SelectCnt[actions[i]]++
 			nodes[i].CumReward[actions[i]] += cumRewards[i]
-			nodes[i].LastUpdate = iterIdx
 		}
 	}
 	return cumRewards
