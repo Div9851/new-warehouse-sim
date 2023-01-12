@@ -11,5 +11,7 @@
   "discountFactor": 0.9,
   "decayRate": 0.999,
   "randSeed": 123,
-  "enableLoadBalance": false
+  "enableLoadBalance": true,
+  "offerStrategy": "NEAREST_FROM_DEPOT",
+  "acceptStrategy": "NEAREST_FROM_DEPOT"
 }
