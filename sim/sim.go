@@ -3,6 +3,7 @@ package sim
 import (
 	"fmt"
 	"math/rand"
+	"sort"
 	"sync"
 
 	"github.com/Div9851/new-warehouse-sim/agentaction"
@@ -90,6 +91,110 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 		}
 		if sim.Turn == sim.Config.LastTurn {
 			break
+		}
+		depotPos := sim.MapData.DepotPos
+		minDist := sim.MapData.MinDist
+		// 負荷分散
+		if sim.Config.EnableLoadBalance {
+			load := make([]float64, sim.Config.NumAgents)
+			avgLoad := 0.0
+			for id := 0; id < sim.Config.NumAgents; id++ {
+				if sim.States[id].HasItem {
+					pos := sim.States[id].Pos
+					load[id] += float64(minDist[depotPos.R][depotPos.C][pos.R][pos.C])
+				}
+				for pos, cnt := range sim.Items[id] {
+					load[id] += float64(minDist[depotPos.R][depotPos.C][pos.R][pos.C] * cnt)
+				}
+				avgLoad += load[id]
+			}
+			avgLoad /= float64(sim.Config.NumAgents)
+			var requests []Request
+			acceptIds := make(map[Request][]int)
+			for id := 0; id < sim.Config.NumAgents; id++ {
+				if load[id] > avgLoad {
+					limit := load[id] - avgLoad
+					cands := []mapdata.Pos{}
+					for pos := range sim.Items[id] {
+						dist := float64(minDist[depotPos.R][depotPos.C][pos.R][pos.C])
+						if dist <= limit {
+							cands = append(cands, pos)
+						}
+					}
+					switch sim.Config.OfferStrategy {
+					case "NEAREST_FROM_DEPOT":
+						sort.Slice(cands, func(i, j int) bool {
+							d1 := minDist[depotPos.R][depotPos.C][cands[i].R][cands[i].C]
+							d2 := minDist[depotPos.R][depotPos.C][cands[j].R][cands[j].C]
+							return d1 < d2
+						})
+					case "FARTHEST_FROM_DEPOT":
+						sort.Slice(cands, func(i, j int) bool {
+							d1 := minDist[depotPos.R][depotPos.C][cands[i].R][cands[i].C]
+							d2 := minDist[depotPos.R][depotPos.C][cands[j].R][cands[j].C]
+							return d1 > d2
+						})
+					}
+					if len(cands) > 0 {
+						requests = append(requests, Request{
+							From: id,
+							Pos:  cands[0],
+						})
+					}
+				}
+			}
+			for id := 0; id < sim.Config.NumAgents; id++ {
+				if load[id] < avgLoad {
+					limit := avgLoad - load[id]
+					cands := []Request{}
+					for _, req := range requests {
+						dist := float64(minDist[depotPos.R][depotPos.C][req.Pos.R][req.Pos.C])
+						if dist <= limit {
+							cands = append(cands, req)
+						}
+					}
+					switch sim.Config.AcceptStrategy {
+					case "NEAREST_FROM_DEPOT":
+						sort.Slice(cands, func(i, j int) bool {
+							d1 := minDist[depotPos.R][depotPos.C][cands[i].Pos.R][cands[i].Pos.C]
+							d2 := minDist[depotPos.R][depotPos.C][cands[j].Pos.R][cands[j].Pos.C]
+							return d1 < d2
+						})
+					case "FARTHEST_FROM_DEPOT":
+						sort.Slice(cands, func(i, j int) bool {
+							d1 := minDist[depotPos.R][depotPos.C][cands[i].Pos.R][cands[i].Pos.C]
+							d2 := minDist[depotPos.R][depotPos.C][cands[j].Pos.R][cands[j].Pos.C]
+							return d1 > d2
+						})
+					}
+					if len(cands) > 0 {
+						acceptIds[cands[0]] = append(acceptIds[cands[0]], id)
+					}
+				}
+			}
+			for _, req := range requests {
+				cands := acceptIds[req]
+				// NEAREST_FROM_ITEM only
+				sort.Slice(cands, func(i, j int) bool {
+					pos1 := sim.States[cands[i]].Pos
+					pos2 := sim.States[cands[j]].Pos
+					d1 := minDist[req.Pos.R][req.Pos.C][pos1.R][pos1.C]
+					d2 := minDist[req.Pos.R][req.Pos.C][pos2.R][pos2.C]
+					return d1 < d2
+				})
+				if len(cands) > 0 {
+					// req.From --> cands[0]
+					from := req.From
+					to := cands[0]
+					sim.ItemsCount[from]--
+					sim.ItemsCount[to]++
+					sim.Items[from][req.Pos]--
+					if sim.Items[from][req.Pos] == 0 {
+						delete(sim.Items[from], req.Pos)
+					}
+					sim.Items[to][req.Pos]++
+				}
+			}
 		}
 		// プランニングフェーズ
 		planners := make([]*fduct.Planner, sim.Config.NumAgents)
