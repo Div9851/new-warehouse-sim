@@ -1,6 +1,7 @@
 package agentstate
 
 import (
+	"math"
 	"math/rand"
 
 	"github.com/Div9851/new-warehouse-sim/agentaction"
@@ -15,7 +16,7 @@ type State struct {
 
 type States []State
 
-func Next(states States, actions agentaction.Actions, free []bool, items []map[mapdata.Pos]int, mapData *mapdata.MapData, config *config.Config, randGen *rand.Rand, newItemProb float64) (States, []float64, []bool) {
+func Next(states States, actions agentaction.Actions, ignore []bool, items []map[mapdata.Pos]int, mapData *mapdata.MapData, config *config.Config, randGen *rand.Rand, newItemProb float64) (States, []float64, []bool) {
 	var curPos []mapdata.Pos
 	var hasItem []bool
 	for _, state := range states {
@@ -26,7 +27,8 @@ func Next(states States, actions agentaction.Actions, free []bool, items []map[m
 	nxtStates := make(States, n)
 	rewards := make([]float64, n)
 	newItem := make([]bool, n)
-	nxtPos, collision := NextPos(curPos, actions, free, mapData)
+	nxtPos, collision := NextPos(curPos, actions, ignore, mapData)
+	depotPos := mapData.DepotPos
 	for i := range states {
 		if collision[i] {
 			rewards[i] += config.Penalty
@@ -35,7 +37,9 @@ func Next(states States, actions agentaction.Actions, free []bool, items []map[m
 		case agentaction.PICKUP:
 			if !hasItem[i] && items[i][curPos[i]] > 0 {
 				hasItem[i] = true
-				rewards[i] += config.PickupReward
+				d := mapData.MinDist[depotPos.R][depotPos.C][curPos[i].R][curPos[i].C]
+				reward := config.PickupReward * math.Min(math.Pow(config.DistanceBonus, float64(d)), config.BonusLimit)
+				rewards[i] += reward
 				items[i][curPos[i]]--
 				if items[i][curPos[i]] == 0 {
 					delete(items[i], curPos[i])
@@ -60,7 +64,7 @@ func Next(states States, actions agentaction.Actions, free []bool, items []map[m
 	return nxtStates, rewards, newItem
 }
 
-func NextPos(curPos []mapdata.Pos, actions agentaction.Actions, free []bool, mapData *mapdata.MapData) ([]mapdata.Pos, []bool) {
+func NextPos(curPos []mapdata.Pos, actions agentaction.Actions, ignore []bool, mapData *mapdata.MapData) ([]mapdata.Pos, []bool) {
 	n := len(curPos)
 	nxtPos := make([]mapdata.Pos, n)
 	for i, cur := range curPos {
@@ -70,13 +74,12 @@ func NextPos(curPos []mapdata.Pos, actions agentaction.Actions, free []bool, map
 	collision := make([]bool, n)
 	visited := make([]int, n)
 	for i := 0; i < n; i++ {
-		if free[i] {
-			visited[i] = 2
+		if ignore[i] {
 			continue
 		}
 		predId[i] = -1
 		for j := 0; j < n; j++ {
-			if i == j || free[j] {
+			if i == j || ignore[j] {
 				continue
 			}
 			if nxtPos[i] == curPos[j] {
@@ -104,10 +107,15 @@ func NextPos(curPos []mapdata.Pos, actions agentaction.Actions, free []bool, map
 			visited[i] = 2
 			return
 		}
-		collision[i] = collision[j]
+		if collision[j] {
+			collision[i] = true
+		}
 		visited[i] = 2
 	}
 	for i := 0; i < n; i++ {
+		if ignore[i] {
+			continue
+		}
 		if visited[i] == 0 {
 			dfs(i)
 		}

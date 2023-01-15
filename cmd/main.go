@@ -112,19 +112,41 @@ func main() {
 		}(run)
 	}
 	wg.Wait()
+	totalItemsCountHistory := make([]float64, *Run)
+	totalClearCountHistory := make([]float64, *Run)
+	totalClearRateHistory := make([]float64, *Run)
+	for i := 0; i < *Run; i++ {
+		for j := 0; j < config.NumAgents; j++ {
+			totalItemsCountHistory[i] += itemsCountHistory[j][i]
+			totalClearCountHistory[i] += clearCountHistory[j][i]
+		}
+		totalClearRateHistory[i] = totalClearCountHistory[i] / totalItemsCountHistory[i]
+	}
 	fmt.Println("--items count--")
 	for i := 0; i < config.NumAgents; i++ {
 		average, variance := calcAvgVar(itemsCountHistory[i])
 		fmt.Printf("AGENT %d: avg. %f var. %f\n", i, average, variance)
+	}
+	{
+		average, variance := calcAvgVar(totalItemsCountHistory)
+		fmt.Printf("TOTAL: avg. %f var. %f\n", average, variance)
 	}
 	fmt.Println("--clear count--")
 	for i := 0; i < config.NumAgents; i++ {
 		average, variance := calcAvgVar(clearCountHistory[i])
 		fmt.Printf("AGENT %d: avg. %f var. %f\n", i, average, variance)
 	}
+	{
+		average, variance := calcAvgVar(totalClearCountHistory)
+		fmt.Printf("TOTAL: avg. %f var. %f\n", average, variance)
+	}
 	fmt.Println("--clear rate--")
 	for i := 0; i < config.NumAgents; i++ {
 		average, variance := calcAvgVar(clearRateHistory[i])
 		fmt.Printf("AGENT %d: avg. %f var. %f\n", i, average, variance)
+	}
+	{
+		average, variance := calcAvgVar(totalClearRateHistory)
+		fmt.Printf("TOTAL: avg. %f var. %f\n", average, variance)
 	}
 }

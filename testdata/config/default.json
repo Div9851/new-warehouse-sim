@@ -7,9 +7,12 @@
   "expandThresh": 1,
   "pickupReward": 100,
   "clearReward": 100,
+  "distanceBonus": 1.1,
+  "bonusLimit": 10.0,
   "penalty": -5,
   "discountFactor": 0.9,
-  "decayRate": 0.999,
   "randSeed": 123,
-  "enableLoadBalance": false
+  "enableExchange": true,
+  "offerStrategy": "NEAREST_FROM_DEPOT",
+  "acceptStrategy": "NEAREST_FROM_DEPOT"
 }
