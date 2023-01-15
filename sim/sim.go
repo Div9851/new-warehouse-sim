@@ -24,28 +24,28 @@ var dummyRequest = Request{
 }
 
 type Simulator struct {
-	Turn            int
-	States          agentstate.States
-	Items           []map[mapdata.Pos]int
-	LastActions     agentaction.Actions
-	ItemsCount      []int
-	PickUpCount     []int
-	ClearCount      []int
-	MapData         *mapdata.MapData
-	SimRandGen      *rand.Rand
-	PlannerRandGens []*rand.Rand
-	Config          *config.Config
-	Verbose         bool
+	Turn        int
+	States      agentstate.States
+	Items       []map[mapdata.Pos]int
+	LastActions agentaction.Actions
+	ItemsCount  []int
+	PickUpCount []int
+	ClearCount  []int
+	MapData     *mapdata.MapData
+	SimRandGen  *rand.Rand
+	RandGens    []*rand.Rand
+	Config      *config.Config
+	Verbose     bool
 }
 
 func New(mapData *mapdata.MapData, config *config.Config, verbose bool, seed int64) *Simulator {
 	simRandGen := rand.New(rand.NewSource(seed))
-	plannerRandGens := []*rand.Rand{}
+	randGens := []*rand.Rand{}
 	states := agentstate.States{}
 	items := []map[mapdata.Pos]int{}
 	usedPos := make(map[mapdata.Pos]struct{})
 	for i := 0; i < config.NumAgents; i++ {
-		plannerRandGens = append(plannerRandGens, rand.New(rand.NewSource(simRandGen.Int63())))
+		randGens = append(randGens, rand.New(rand.NewSource(simRandGen.Int63())))
 		var startPos mapdata.Pos
 		for {
 			startPos = mapData.AllPos[simRandGen.Intn(len(mapData.AllPos))]
@@ -65,17 +65,17 @@ func New(mapData *mapdata.MapData, config *config.Config, verbose bool, seed int
 	pickUpCount := make([]int, config.NumAgents)
 	clearCount := make([]int, config.NumAgents)
 	return &Simulator{
-		Turn:            0,
-		States:          states,
-		Items:           items,
-		ItemsCount:      itemsCount,
-		PickUpCount:     pickUpCount,
-		ClearCount:      clearCount,
-		MapData:         mapData,
-		SimRandGen:      simRandGen,
-		PlannerRandGens: plannerRandGens,
-		Config:          config,
-		Verbose:         verbose,
+		Turn:        0,
+		States:      states,
+		Items:       items,
+		ItemsCount:  itemsCount,
+		PickUpCount: pickUpCount,
+		ClearCount:  clearCount,
+		MapData:     mapData,
+		SimRandGen:  simRandGen,
+		RandGens:    randGens,
+		Config:      config,
+		Verbose:     verbose,
 	}
 }
 
@@ -121,24 +121,29 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 							cands = append(cands, pos)
 						}
 					}
-					switch sim.Config.OfferStrategy {
-					case "NEAREST_FROM_DEPOT":
-						sort.Slice(cands, func(i, j int) bool {
-							d1 := minDist[depotPos.R][depotPos.C][cands[i].R][cands[i].C]
-							d2 := minDist[depotPos.R][depotPos.C][cands[j].R][cands[j].C]
-							return d1 < d2
-						})
-					case "FARTHEST_FROM_DEPOT":
-						sort.Slice(cands, func(i, j int) bool {
-							d1 := minDist[depotPos.R][depotPos.C][cands[i].R][cands[i].C]
-							d2 := minDist[depotPos.R][depotPos.C][cands[j].R][cands[j].C]
-							return d1 > d2
-						})
+					if len(cands) == 0 {
+						continue
 					}
-					if len(cands) > 0 {
+					sort.Slice(cands, func(i, j int) bool {
+						d1 := minDist[depotPos.R][depotPos.C][cands[i].R][cands[i].C]
+						d2 := minDist[depotPos.R][depotPos.C][cands[j].R][cands[j].C]
+						return d1 < d2
+					})
+					switch sim.Config.RequestStrategy {
+					case "NEAREST_FROM_DEPOT":
 						requests = append(requests, Request{
 							From: id,
 							Pos:  cands[0],
+						})
+					case "FARTHEST_FROM_DEPOT":
+						requests = append(requests, Request{
+							From: id,
+							Pos:  cands[len(cands)-1],
+						})
+					case "RANDOM":
+						requests = append(requests, Request{
+							From: id,
+							Pos:  cands[sim.RandGens[id].Intn(len(cands))],
 						})
 					}
 				}
@@ -153,47 +158,50 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 							cands = append(cands, req)
 						}
 					}
+					if len(cands) == 0 {
+						continue
+					}
+					sort.Slice(cands, func(i, j int) bool {
+						d1 := minDist[depotPos.R][depotPos.C][cands[i].Pos.R][cands[i].Pos.C]
+						d2 := minDist[depotPos.R][depotPos.C][cands[j].Pos.R][cands[j].Pos.C]
+						return d1 < d2
+					})
 					switch sim.Config.AcceptStrategy {
 					case "NEAREST_FROM_DEPOT":
-						sort.Slice(cands, func(i, j int) bool {
-							d1 := minDist[depotPos.R][depotPos.C][cands[i].Pos.R][cands[i].Pos.C]
-							d2 := minDist[depotPos.R][depotPos.C][cands[j].Pos.R][cands[j].Pos.C]
-							return d1 < d2
-						})
-					case "FARTHEST_FROM_DEPOT":
-						sort.Slice(cands, func(i, j int) bool {
-							d1 := minDist[depotPos.R][depotPos.C][cands[i].Pos.R][cands[i].Pos.C]
-							d2 := minDist[depotPos.R][depotPos.C][cands[j].Pos.R][cands[j].Pos.C]
-							return d1 > d2
-						})
-					}
-					if len(cands) > 0 {
 						acceptIds[cands[0]] = append(acceptIds[cands[0]], id)
+					case "FARTHEST_FROM_DEPOT":
+						acceptIds[cands[len(cands)-1]] = append(acceptIds[cands[len(cands)-1]], id)
+					case "RANDOM":
+						r := sim.RandGens[id].Intn(len(cands))
+						acceptIds[cands[r]] = append(acceptIds[cands[r]], id)
 					}
 				}
 			}
 			for _, req := range requests {
 				cands := acceptIds[req]
-				// NEAREST_FROM_ITEM only
-				sort.Slice(cands, func(i, j int) bool {
-					pos1 := sim.States[cands[i]].Pos
-					pos2 := sim.States[cands[j]].Pos
-					d1 := minDist[req.Pos.R][req.Pos.C][pos1.R][pos1.C]
-					d2 := minDist[req.Pos.R][req.Pos.C][pos2.R][pos2.C]
-					return d1 < d2
-				})
-				if len(cands) > 0 {
-					// req.From --> cands[0]
-					from := req.From
-					to := cands[0]
-					sim.ItemsCount[from]--
-					sim.ItemsCount[to]++
-					sim.Items[from][req.Pos]--
-					if sim.Items[from][req.Pos] == 0 {
-						delete(sim.Items[from], req.Pos)
-					}
-					sim.Items[to][req.Pos]++
+				if len(cands) == 0 {
+					continue
 				}
+				sort.Slice(cands, func(i, j int) bool {
+					return load[cands[i]] < load[cands[j]]
+				})
+				from := req.From
+				to := -1
+				switch sim.Config.NominateStrategy {
+				case "LOWEST_LOAD":
+					to = cands[0]
+				case "HIGHEST_LOAD":
+					to = cands[len(cands)-1]
+				case "RANDOM":
+					to = cands[sim.RandGens[from].Intn(len(cands))]
+				}
+				sim.ItemsCount[from]--
+				sim.ItemsCount[to]++
+				sim.Items[from][req.Pos]--
+				if sim.Items[from][req.Pos] == 0 {
+					delete(sim.Items[from], req.Pos)
+				}
+				sim.Items[to][req.Pos]++
 			}
 		}
 		// プランニングフェーズ
@@ -202,7 +210,7 @@ func (sim *Simulator) Run() ([]int, []int, []int) {
 		var wg sync.WaitGroup
 		for id := 0; id < sim.Config.NumAgents; id++ {
 			wg.Add(1)
-			planners[id] = fduct.New(sim.MapData, sim.Config, sim.PlannerRandGens[id], nodePool, 0)
+			planners[id] = fduct.New(sim.MapData, sim.Config, sim.RandGens[id], nodePool, 0)
 			go func(id int) {
 				for iter := 0; iter < sim.Config.NumIters; iter++ {
 					planners[id].Update(sim.Turn, sim.States, sim.Items, iter)

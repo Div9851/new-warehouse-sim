@@ -7,12 +7,10 @@
   "expandThresh": 1,
   "pickupReward": 100,
   "clearReward": 100,
-  "distanceBonus": 1.1,
-  "bonusLimit": 10.0,
+  "distanceBonus": 1.0,
+  "bonusLimit": 1.0,
   "penalty": -5,
   "discountFactor": 0.9,
   "randSeed": 123,
-  "enableExchange": true,
-  "offerStrategy": "NEAREST_FROM_DEPOT",
-  "acceptStrategy": "NEAREST_FROM_DEPOT"
+  "enableExchange": false
 }
