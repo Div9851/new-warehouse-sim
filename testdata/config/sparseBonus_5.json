@@ -7,7 +7,8 @@
   "expandThresh": 2,
   "reward": 100,
   "distanceBonus": 1.0,
-  "penalty": -30,
+  "sparseBonus": 5,
+  "penalty": -5,
   "discountFactor": 0.9,
   "randSeed": 123
 }

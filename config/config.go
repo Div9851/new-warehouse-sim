@@ -7,11 +7,10 @@ type Config struct {
 	NumIters         int     `json:"numIters"`
 	MaxDepth         int     `json:"maxDepth"`
 	ExpandThresh     int     `json:"expandThresh"`
-	PickupReward     float64 `json:"pickupReward"`
-	ClearReward      float64 `json:"clearReward"`
+	Reward           float64 `json:"reward"`
 	Penalty          float64 `json:"penalty"`
 	DistanceBonus    float64 `json:"distanceBonus"`
-	BonusLimit       float64 `json:"bonusLimit"`
+	SparseBonus      float64 `json:"sparseBonus,omitempty"`
 	DiscountFactor   float64 `json:"discountFactor"`
 	RandSeed         int64   `json:"randSeed"`
 	EnableExchange   bool    `json:"enableExchange,omitempty"`

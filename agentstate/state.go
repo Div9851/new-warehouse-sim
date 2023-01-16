@@ -16,6 +16,18 @@ type State struct {
 
 type States []State
 
+func calcCloseness(pos []mapdata.Pos, n int, mapData *mapdata.MapData) []float64 {
+	closeness := make([]float64, n)
+	for i := 0; i < n; i++ {
+		closeness[i] = 0.0
+		for j := 0; j < n; j++ {
+			d := mapData.MinDist[pos[i].R][pos[i].C][pos[j].R][pos[j].C]
+			closeness[i] = math.Max(closeness[i], 1.0/float64(d))
+		}
+	}
+	return closeness
+}
+
 func Next(states States, actions agentaction.Actions, ignore []bool, items []map[mapdata.Pos]int, mapData *mapdata.MapData, config *config.Config, randGen *rand.Rand, newItemProb float64) (States, []float64, []bool) {
 	var curPos []mapdata.Pos
 	var hasItem []bool
@@ -27,18 +39,23 @@ func Next(states States, actions agentaction.Actions, ignore []bool, items []map
 	nxtStates := make(States, n)
 	rewards := make([]float64, n)
 	newItem := make([]bool, n)
+	curCloseness := calcCloseness(curPos, n, mapData)
 	nxtPos, collision := NextPos(curPos, actions, ignore, mapData)
+	nxtCloseness := calcCloseness(nxtPos, n, mapData)
 	depotPos := mapData.DepotPos
 	for i := range states {
 		if collision[i] {
 			rewards[i] += config.Penalty
+		}
+		if nxtCloseness[i] < curCloseness[i] {
+			rewards[i] += config.SparseBonus
 		}
 		switch actions[i] {
 		case agentaction.PICKUP:
 			if !hasItem[i] && items[i][curPos[i]] > 0 {
 				hasItem[i] = true
 				d := mapData.MinDist[depotPos.R][depotPos.C][curPos[i].R][curPos[i].C]
-				reward := config.PickupReward * math.Min(math.Pow(config.DistanceBonus, float64(d)), config.BonusLimit)
+				reward := config.Reward * math.Pow(config.DistanceBonus, float64(d))
 				rewards[i] += reward
 				items[i][curPos[i]]--
 				if items[i][curPos[i]] == 0 {
@@ -48,7 +65,7 @@ func Next(states States, actions agentaction.Actions, ignore []bool, items []map
 		case agentaction.CLEAR:
 			if hasItem[i] && curPos[i] == mapData.DepotPos {
 				hasItem[i] = false
-				rewards[i] += config.ClearReward
+				rewards[i] += config.Reward
 			}
 		}
 		if randGen.Float64() < newItemProb {

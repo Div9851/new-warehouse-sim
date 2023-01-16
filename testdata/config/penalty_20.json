@@ -5,10 +5,8 @@
   "numIters": 20000,
   "maxDepth": 20,
   "expandThresh": 2,
-  "pickupReward": 100,
-  "clearReward": 100,
+  "reward": 100,
   "distanceBonus": 1.0,
-  "bonusLimit": 1.0,
   "penalty": -20,
   "discountFactor": 0.9,
   "randSeed": 123
