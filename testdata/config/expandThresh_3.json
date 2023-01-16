@@ -1,0 +1,15 @@
+{
+  "numAgents": 3,
+  "lastTurn": 100,
+  "newItemProb": 0.1,
+  "numIters": 20000,
+  "maxDepth": 20,
+  "expandThresh": 3,
+  "pickupReward": 100,
+  "clearReward": 100,
+  "distanceBonus": 1.0,
+  "bonusLimit": 1.0,
+  "penalty": -5,
+  "discountFactor": 0.9,
+  "randSeed": 123
+}
