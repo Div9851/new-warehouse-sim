@@ -9,7 +9,6 @@ type Config struct {
 	ExpandThresh     int     `json:"expandThresh"`
 	Reward           float64 `json:"reward"`
 	Penalty          float64 `json:"penalty"`
-	DistanceBonus    float64 `json:"distanceBonus"`
 	DiscountFactor   float64 `json:"discountFactor"`
 	RandSeed         int64   `json:"randSeed"`
 	EnableExchange   bool    `json:"enableExchange,omitempty"`

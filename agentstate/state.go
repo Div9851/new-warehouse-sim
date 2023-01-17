@@ -1,7 +1,6 @@
 package agentstate
 
 import (
-	"math"
 	"math/rand"
 
 	"github.com/Div9851/new-warehouse-sim/agentaction"
@@ -28,7 +27,6 @@ func Next(states States, actions agentaction.Actions, ignore []bool, items []map
 	rewards := make([]float64, n)
 	newItem := make([]bool, n)
 	nxtPos, collision := NextPos(curPos, actions, ignore, mapData)
-	depotPos := mapData.DepotPos
 	for i := range states {
 		if collision[i] {
 			rewards[i] += config.Penalty
@@ -37,9 +35,7 @@ func Next(states States, actions agentaction.Actions, ignore []bool, items []map
 		case agentaction.PICKUP:
 			if !hasItem[i] && items[i][curPos[i]] > 0 {
 				hasItem[i] = true
-				d := mapData.MinDist[depotPos.R][depotPos.C][curPos[i].R][curPos[i].C]
-				reward := config.Reward * math.Pow(config.DistanceBonus, float64(d))
-				rewards[i] += reward
+				rewards[i] += config.Reward
 				items[i][curPos[i]]--
 				if items[i][curPos[i]] == 0 {
 					delete(items[i], curPos[i])

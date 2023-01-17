@@ -6,7 +6,6 @@
   "maxDepth": 20,
   "expandThresh": 2,
   "reward": 100,
-  "distanceBonus": 1.0,
   "penalty": -30,
   "discountFactor": 0.9,
   "randSeed": 123
