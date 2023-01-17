@@ -150,19 +150,21 @@ func (planner *Planner) GetBestAction(id int, curState agentstate.State, items m
 
 func (planner *Planner) Update(turn int, curStates agentstate.States, items []map[mapdata.Pos]int, iterIdx int) {
 	rollout := make([]bool, planner.Config.NumAgents)
+	startPos := make([]mapdata.Pos, planner.Config.NumAgents)
 	targetPos := make([]mapdata.Pos, planner.Config.NumAgents)
 	itemsCopy := make([]map[mapdata.Pos]int, planner.Config.NumAgents)
 	for i := 0; i < planner.Config.NumAgents; i++ {
+		startPos[i] = curStates[i].Pos
 		targetPos[i] = mapdata.NonePos
 		itemsCopy[i] = make(map[mapdata.Pos]int)
 		for pos, itemNum := range items[i] {
 			itemsCopy[i][pos] = itemNum
 		}
 	}
-	planner.update(turn, 0, curStates, itemsCopy, rollout, targetPos, iterIdx)
+	planner.update(turn, 0, curStates, itemsCopy, startPos, rollout, targetPos, iterIdx)
 }
 
-func (planner *Planner) update(turn int, depth int, curStates agentstate.States, items []map[mapdata.Pos]int, rollout []bool, targetPos []mapdata.Pos, iterIdx int) []float64 {
+func (planner *Planner) update(turn int, depth int, curStates agentstate.States, items []map[mapdata.Pos]int, startPos []mapdata.Pos, rollout []bool, targetPos []mapdata.Pos, iterIdx int) []float64 {
 	if turn == planner.Config.LastTurn || depth == planner.Config.MaxDepth {
 		return make([]float64, planner.Config.NumAgents)
 	}
@@ -194,8 +196,8 @@ func (planner *Planner) update(turn int, depth int, curStates agentstate.States,
 			actions[i] = nodes[i].Select(validActions)
 		}
 	}
-	nxtStates, rewards, _ := agentstate.Next(curStates, actions, nxtRollout, items, planner.MapData, planner.Config, planner.RandGen, planner.NewItemProb)
-	cumRewards := planner.update(turn+1, depth+1, nxtStates, items, nxtRollout, targetPos, iterIdx)
+	nxtStates, rewards, _ := agentstate.Next(curStates, actions, startPos, nxtRollout, items, planner.MapData, planner.Config, planner.RandGen, planner.NewItemProb)
+	cumRewards := planner.update(turn+1, depth+1, nxtStates, items, startPos, nxtRollout, targetPos, iterIdx)
 	for i := range curStates {
 		cumRewards[i] = rewards[i] + planner.Config.DiscountFactor*cumRewards[i]
 		if !rollout[i] {

@@ -16,7 +16,7 @@ type State struct {
 
 type States []State
 
-func Next(states States, actions agentaction.Actions, ignore []bool, items []map[mapdata.Pos]int, mapData *mapdata.MapData, config *config.Config, randGen *rand.Rand, newItemProb float64) (States, []float64, []bool) {
+func Next(states States, actions agentaction.Actions, startPos []mapdata.Pos, ignore []bool, items []map[mapdata.Pos]int, mapData *mapdata.MapData, config *config.Config, randGen *rand.Rand, newItemProb float64) (States, []float64, []bool) {
 	var curPos []mapdata.Pos
 	var hasItem []bool
 	for _, state := range states {
@@ -28,7 +28,6 @@ func Next(states States, actions agentaction.Actions, ignore []bool, items []map
 	rewards := make([]float64, n)
 	newItem := make([]bool, n)
 	nxtPos, collision := NextPos(curPos, actions, ignore, mapData)
-	depotPos := mapData.DepotPos
 	for i := range states {
 		if collision[i] {
 			rewards[i] += config.Penalty
@@ -37,7 +36,7 @@ func Next(states States, actions agentaction.Actions, ignore []bool, items []map
 		case agentaction.PICKUP:
 			if !hasItem[i] && items[i][curPos[i]] > 0 {
 				hasItem[i] = true
-				d := mapData.MinDist[depotPos.R][depotPos.C][curPos[i].R][curPos[i].C]
+				d := mapData.MinDist[startPos[i].R][startPos[i].C][curPos[i].R][curPos[i].C]
 				reward := config.Reward * math.Pow(config.DistanceBonus, float64(d))
 				rewards[i] += reward
 				items[i][curPos[i]]--
@@ -49,6 +48,7 @@ func Next(states States, actions agentaction.Actions, ignore []bool, items []map
 			if hasItem[i] && curPos[i] == mapData.DepotPos {
 				hasItem[i] = false
 				rewards[i] += config.Reward
+				startPos[i] = curPos[i]
 			}
 		}
 		if randGen.Float64() < newItemProb {

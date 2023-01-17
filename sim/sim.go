@@ -230,7 +230,11 @@ func (sim *Simulator) Next(actions agentaction.Actions) {
 	sim.Turn++
 	sim.LastActions = actions
 	ignore := make([]bool, sim.Config.NumAgents)
-	nxtStates, _, newItem := agentstate.Next(sim.States, actions, ignore, sim.Items, sim.MapData, sim.Config, sim.SimRandGen, sim.Config.NewItemProb)
+	startPos := make([]mapdata.Pos, sim.Config.NumAgents)
+	for i := 0; i < sim.Config.NumAgents; i++ {
+		startPos[i] = sim.States[i].Pos
+	}
+	nxtStates, _, newItem := agentstate.Next(sim.States, actions, startPos, ignore, sim.Items, sim.MapData, sim.Config, sim.SimRandGen, sim.Config.NewItemProb)
 	sim.States = nxtStates
 	for i := 0; i < sim.Config.NumAgents; i++ {
 		if newItem[i] {
