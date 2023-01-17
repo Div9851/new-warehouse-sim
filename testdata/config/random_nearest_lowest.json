@@ -1,0 +1,16 @@
+{
+  "numAgents": 3,
+  "lastTurn": 100,
+  "newItemProb": 0.1,
+  "numIters": 20000,
+  "maxDepth": 20,
+  "expandThresh": 2,
+  "reward": 100,
+  "penalty": -5,
+  "discountFactor": 0.9,
+  "randSeed": 123,
+  "enableExchange": true,
+  "requestStrategy": "RANDOM",
+  "acceptStrategy": "NEAREST_FROM_DEPOT",
+  "nominateStrategy": "LOWEST_LOAD"
+}
